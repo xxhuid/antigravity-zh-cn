@@ -79,6 +79,8 @@
     "App version": "应用版本",
     "Advanced Settings": "高级设置",
     "Advanced Settings >": "高级设置 >",
+    "Automatic check for updates": "自动检查更新",
+    "Automatically prompt you to restart the app when a new update is available. When disabled, you can check for updates manually from the app menu.": "有新版本可用时自动提示重启应用。关闭后，可在应用菜单中手动检查更新。",
 
     "Configure the agent's visual theme and display preferences.": "配置客户端视觉主题与显示偏好。",
     "Chat": "对话",

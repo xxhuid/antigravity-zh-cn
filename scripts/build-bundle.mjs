@@ -106,6 +106,11 @@ export function loadAndValidateLocales(rootDir = ROOT_DIR) {
             throw new Error(`Empty menu translation for key "${k}" in ${modPath}`);
           }
           menu[k] = v;
+          // Antigravity 2.0 renders custom HTML titlebar menus on Windows/Linux,
+          // so also expose menu labels to the renderer exact dictionary when not overridden.
+          if (!Object.prototype.hasOwnProperty.call(exact, k)) {
+            exact[k] = v;
+          }
         }
       }
     }
