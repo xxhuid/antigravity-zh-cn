@@ -1,6 +1,26 @@
 {
   "exact": {
     "Send": "发送",
+    "Send Message": "发送消息",
+    "Send Message Enter": "发送消息 Enter",
+    "Send Message Ctrl+Enter": "发送消息 Ctrl+Enter",
+    "Record Audio": "语音输入",
+    "Stop Recording": "停止录音",
+    "Voice Mode": "语音模式",
+    "Start Voice Mode": "开启语音模式",
+    "Start Voice mode": "开启语音模式",
+    "Stop Voice mode": "关闭语音模式",
+    "End Voice mode": "结束语音模式",
+    "Add Context": "添加上下文",
+    "Files": "文件",
+    "Folder": "文件夹",
+    "Mentions": "引用 (@)",
+    "Actions": "操作 (/)",
+    "Drive": "云端硬盘 (Drive)",
+    "Set up": "去配置",
+    "Your This Computer setting": "你的「本机」默认设置",
+    "Your Remote setting": "你的「远程」默认设置",
+    "Your Global setting": "你的全局默认设置",
     "Stop": "停止",
     "Stop Generating": "停止生成",
     "Regenerate": "重新生成",
@@ -79,6 +99,18 @@
     "New Worktree": "新建工作树 (Worktree)",
     "Worktrees are available for Git repositories": "仅 Git 仓库支持工作树 (Worktree)",
     "No Model Selected": "未选择模型",
+    "Model": "模型",
+    "Orchestrator": "编排器",
+    "Leaving Soon": "即将下线",
+    "Notice": "提示",
+    "View Usage": "查看用量",
+    "Usage": "用量",
+    "Weekly limit": "每周额度",
+    "5h limit": "5 小时额度",
+    "Resets soon": "即将重置",
+    "Resets in <1m": "1 分钟内重置",
+    "Thinking effort": "思考强度",
+    "Controls how much time and quota the model spends reasoning before responding. Higher effort improves accuracy on hard problems, at the cost of slower responses and higher quota use.": "控制模型在回复前投入的推理时间与额度。更高的强度能提升复杂问题的准确率，但响应更慢且消耗更多额度。",
     "Create with Prompt": "通过提示词创建",
     "No automations yet": "暂无自动化任务",
     "Run a prompt on a schedule, like a morning summary of yesterday's changes. Runs show up here.": "按计划定时运行提示词（例如每天早晨汇总昨天的代码变更），运行记录会显示在这里。",
@@ -221,6 +253,46 @@
       "regex": "^Yes, and always allow\\s+(.+)$",
       "flags": "",
       "replace": "是，且始终允许 $1"
+    },
+    {
+      "regex": "^(\\d+)%\\s+left$",
+      "flags": "i",
+      "replace": "剩余 $1%"
+    },
+    {
+      "regex": "^Resets in (\\d+)d\\s+(\\d+)h$",
+      "flags": "i",
+      "replace": "$1 天 $2 小时后重置"
+    },
+    {
+      "regex": "^Resets in (\\d+)h\\s+(\\d+)m$",
+      "flags": "i",
+      "replace": "$1 小时 $2 分钟后重置"
+    },
+    {
+      "regex": "^Resets in (\\d+)d$",
+      "flags": "i",
+      "replace": "$1 天后重置"
+    },
+    {
+      "regex": "^Resets in (\\d+)h$",
+      "flags": "i",
+      "replace": "$1 小时后重置"
+    },
+    {
+      "regex": "^Resets in (\\d+)m$",
+      "flags": "i",
+      "replace": "$1 分钟后重置"
+    },
+    {
+      "regex": "^Send Message\\s+(.+)$",
+      "flags": "",
+      "replace": "发送消息 $1"
+    },
+    {
+      "regex": "^Record Audio\\s+(.+)$",
+      "flags": "",
+      "replace": "语音输入 $1"
     }
   ]
 }

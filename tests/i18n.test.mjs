@@ -419,9 +419,28 @@ test('mountLanguageUI injects Language selector into Settings panel and switches
   assert.equal(splitDiv.textContent, '暂无自动化任务');
   assert.equal(hybridDiv.textContent, 'No unknown widgets yet');
 
+  // Verify contextual "New": standalone button -> "新建", inline model badge -> "新"
+  const createBtn = doc.createElement('button');
+  createBtn.textContent = 'New';
+  const modelRow = doc.createElement('button');
+  const modelName = doc.createElement('span');
+  modelName.textContent = 'Gemini 4 Neon';
+  const newBadge = doc.createElement('span');
+  newBadge.textContent = 'New';
+  modelRow.appendChild(modelName);
+  modelRow.appendChild(newBadge);
+  doc.body.appendChild(createBtn);
+  doc.body.appendChild(modelRow);
+
+  translator.translateTree(doc.body);
+  assert.equal(createBtn.textContent, '新建');
+  assert.equal(newBadge.textContent, '新');
+
   translator.setLocale('en');
   assert.equal(splitDiv.textContent, 'No automations yet');
   assert.equal(hybridDiv.textContent, 'No unknown widgets yet');
+  assert.equal(createBtn.textContent, 'New');
+  assert.equal(newBadge.textContent, 'New');
 
   // Re-calling injectIntoSettings is idempotent (no duplicate settings sections)
   ui.injectIntoSettings();

@@ -159,6 +159,14 @@ export function createTranslator(bundle, options = {}) {
     if (!pack || !pack.code) {
       throw new Error('Locale pack must define a non-empty "code"');
     }
+    const exact = Object.assign({}, pack.exact || {});
+    const exactLower = Object.create(null);
+    for (const [k, v] of Object.entries(exact)) {
+      if (k.includes(' ')) {
+        const lower = k.toLowerCase();
+        if (!(lower in exactLower)) exactLower[lower] = v;
+      }
+    }
     const normalized = {
       code: pack.code,
       name: pack.name || pack.code,
@@ -166,7 +174,8 @@ export function createTranslator(bundle, options = {}) {
       direction: pack.direction || 'ltr',
       builtin: Boolean(pack.builtin),
       ui: Object.assign({}, DEFAULT_EN_UI, pack.ui || {}),
-      exact: Object.assign({}, pack.exact || {}),
+      exact,
+      exactLower,
       patterns: compilePatterns(pack.patterns || []),
     };
     if (!locales.has(normalized.code)) {
@@ -246,6 +255,14 @@ export function createTranslator(bundle, options = {}) {
       return `${leading}${pack.exact[core]}${trailing}`;
     }
 
+    // Multi-word case-insensitive fallback (handles Title Case vs Sentence case variants safely)
+    if (core.includes(' ')) {
+      const lowerKey = core.toLowerCase();
+      if (pack.exactLower && lowerKey in pack.exactLower) {
+        return `${leading}${pack.exactLower[lowerKey]}${trailing}`;
+      }
+    }
+
     if (isLikelyNonUIText(core)) return rawText;
 
     for (const entry of pack.patterns) {
@@ -304,6 +321,27 @@ export function createTranslator(bundle, options = {}) {
     }
   }
 
+  function resolveNodeTranslation(node, sourceText) {
+    const parent = node.parentElement || node.parentNode;
+    // Guard against mis-translating split English phrases like `<span>No</span> automations yet`
+    if (AMBIGUOUS_SHORT_WORDS.has(sourceText.trim()) && isFollowedByEnglishSibling(node)) {
+      return sourceText;
+    }
+
+    // Contextual disambiguation for "New":
+    // Standalone "+ New" action button -> "新建", while inline feature/model "New" badge -> "新"
+    if (sourceText.trim() === 'New' && currentLocale === 'zh-CN' && parent) {
+      const btn = typeof parent.closest === 'function' ? parent.closest('button') : null;
+      const btnText = btn ? (btn.textContent || '').replace(/[+\s]/g, '') : '';
+      const isCreateBtn = btnText === 'New' || btnText === '新建';
+      const leading = sourceText.match(/^\s*/)[0];
+      const trailing = sourceText.match(/\s*$/)[0];
+      return `${leading}${isCreateBtn ? '新建' : '新'}${trailing}`;
+    }
+
+    return translateString(sourceText, currentLocale);
+  }
+
   function processTextNode(node) {
     if (!node || node.nodeType !== 3) return;
     const parent = node.parentElement || node.parentNode;
@@ -318,14 +356,7 @@ export function createTranslator(bundle, options = {}) {
     }
 
     const sourceText = originalTextMap.get(node);
-    // Guard against mis-translating split English phrases like `<span>No</span> automations yet`
-    if (AMBIGUOUS_SHORT_WORDS.has(sourceText.trim()) && isFollowedByEnglishSibling(node)) {
-      setNodeValueTracked(node, sourceText);
-      return;
-    }
-
-    const nextValue = translateString(sourceText, currentLocale);
-    setNodeValueTracked(node, nextValue);
+    setNodeValueTracked(node, resolveNodeTranslation(node, sourceText));
   }
 
   /**
@@ -454,8 +485,7 @@ export function createTranslator(bundle, options = {}) {
         }
         const sourceText = originalTextMap.get(node);
         if (typeof sourceText !== 'string') continue;
-        const nextValue = translateString(sourceText, currentLocale);
-        setNodeValueTracked(node, nextValue);
+        setNodeValueTracked(node, resolveNodeTranslation(node, sourceText));
       }
 
       for (const el of Array.from(trackedElements)) {

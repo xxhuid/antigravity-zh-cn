@@ -2,6 +2,21 @@
 
 本项目版本号采用独立语义化版本（SemVer），不与 Antigravity 官方版本号强绑定；每个版本均标注已实测适配的 Antigravity 客户端版本。
 
+## [0.2.1] - 2026-11-24
+
+> **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11，兼容 `2.35.x+`）
+
+### 新增与优化
+
+- **词库扩展至 531 条 UI 词条 + 41 条动态正则**：
+  - 补全**本地/远程权限下拉菜单**（`Local Permissions`、四档执行策略说明、默认设置悬浮提示、运行期不可更改权限提示）；
+  - 补全**模型选择器与思考强度**（`Model`、`Orchestrator`、`Leaving Soon`、`Notice`、`View Usage`、`Thinking effort` 与详细说明）；
+  - 补全**查看用量（Usage）悬浮面板**（`Weekly limit`、`5h limit`、`剩余 X%` 以及 `Resets in Xd Yh / Xh Ym` 动态倒计时）；
+  - 补全**输入框工具栏与悬浮提示**（`+` 添加上下文菜单 `Add Context / Files / Folder / Mentions / Actions / Drive / Set up`，以及 `Send Message`、`Record Audio`、`Start Voice mode` 提示）。
+- **语境与大小写引擎增强**：
+  - 修复模型行内 `New ⓘ` 徽标误译为「新建」的问题：独立 `+ New` 按钮继续译为 **新建**，模型/功能徽标译为 **新**；
+  - 新增多词短语忽略大小写安全兜底（仅作用于多词 UI 短语，不影响单字与代码区），自动兼容 Title Case / Sentence case 变体。
+
 ## [0.2.0] - 2026-11-24
 
 > **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11，兼容 `2.35.x+`）
