@@ -59,7 +59,7 @@ const DEFAULT_EN_UI = {
 };
 
 function isLikelyNonUIText(trimmed) {
-  if (!trimmed || trimmed.length > 120) return true;
+  if (!trimmed || trimmed.length > 260) return true;
   // Pure digits, punctuation, or whitespace
   if (/^[\d\s.,:;!?+\-*/=<>()[\]{}|\\/@#$%^&~`'"]+$/.test(trimmed)) return true;
   // URLs

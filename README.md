@@ -137,7 +137,7 @@ git pull
 | 平台 | 当前状态 | 推荐方式与说明 |
 | :--- | :--- | :--- |
 | **Windows** | 已实机验证 | **静态补丁**与 **CDP 启动器**均可用；若 Antigravity 安装在 `C:\Program Files`，执行静态补丁时请使用管理员 PowerShell |
-| **macOS** | 代码已适配，待社区实测 | 修改 `/Applications/Antigravity.app` 内 `app.asar` 会使官方签名失效（通常需额外执行 `codesign --force --deep --sign - /Applications/Antigravity.app`），**建议优先使用方式一（`./launcher/start-unix.sh`）** |
+| **macOS** | 方式一（CDP）已实机验证 | **推荐使用方式一（`./launcher/start-unix.sh`）**；方式二（静态补丁）修改 `/Applications/Antigravity.app` 内 `app.asar` 会使官方签名失效（通常需额外执行 `codesign --force --deep --sign - /Applications/Antigravity.app`） |
 | **Linux** | 代码已适配，待社区实测 | `.deb/.rpm` 安装通常在 `/opt/` 或 `/usr/lib/`（静态补丁可能需要 `sudo`）；只读挂载的 **AppImage** 请直接使用方式一（`./launcher/start-unix.sh --app <AppImage路径>`） |
 
 ### Antigravity 版本对应关系
