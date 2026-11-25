@@ -249,10 +249,22 @@ export function resolveBackupAction(asarPath, backupPath) {
   };
 }
 
-export function detectAsarPath(platform = process.platform) {
+function isExistingFile(filePath) {
+  try {
+    return Boolean(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function detectAsarPath(platform = process.platform, options = {}) {
   const candidates = [];
+  const homeDir = options.homeDir || os.homedir();
+  const repoDir = options.rootDir || ROOT_DIR;
+  const arch = options.arch || process.arch;
+
   if (platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     candidates.push(
       path.join(localAppData, 'Programs', 'Antigravity', 'resources', 'app.asar'),
@@ -283,15 +295,31 @@ export function detectAsarPath(platform = process.platform) {
   } else if (platform === 'darwin') {
     candidates.push(
       '/Applications/Antigravity.app/Contents/Resources/app.asar',
-      path.join(os.homedir(), 'Applications', 'Antigravity.app', 'Contents', 'Resources', 'app.asar'),
+      path.join(homeDir, 'Applications', 'Antigravity.app', 'Contents', 'Resources', 'app.asar'),
     );
   } else {
     candidates.push(
       '/opt/Antigravity/resources/app.asar',
       '/usr/lib/antigravity/resources/app.asar',
     );
+    const portableParents = [
+      path.join(homeDir, 'Applications', 'Portable'),
+      path.join(homeDir, 'Applications'),
+      path.resolve(repoDir, '..'),
+    ];
+    const dirNames = ['Antigravity', 'antigravity', `Antigravity-${arch}`, 'Antigravity-x64', 'Antigravity-arm64'];
+    const seenDirs = new Set();
+    for (const parent of portableParents) {
+      for (const name of dirNames) {
+        const candidate = path.join(parent, name, 'resources', 'app.asar');
+        if (!seenDirs.has(candidate)) {
+          seenDirs.add(candidate);
+          candidates.push(candidate);
+        }
+      }
+    }
   }
-  return candidates.find((p) => fs.existsSync(p)) || '';
+  return candidates.find((p) => isExistingFile(p)) || '';
 }
 
 function parseArgs(argv) {

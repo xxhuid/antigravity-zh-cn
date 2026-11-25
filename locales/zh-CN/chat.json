@@ -141,9 +141,57 @@
     "High": "高",
     "Extra High": "极高",
     "now": "刚刚",
-    "just now": "刚刚"
+    "just now": "刚刚",
+    "Updated just now": "刚刚更新",
+    "Thought for <1s": "思考不足 1 秒",
+    "Worked for <1s": "已工作不足 1 秒"
   },
   "patterns": [
+    {
+      "regex": "^Updated\\s+(.+)$",
+      "flags": "",
+      "replace": "更新于 $1"
+    },
+    {
+      "regex": "^Worked for (\\d+)h\\s+(\\d+)m$",
+      "flags": "i",
+      "replace": "已工作 $1 小时 $2 分钟"
+    },
+    {
+      "regex": "^Worked for (\\d+)m\\s+(\\d+)s$",
+      "flags": "i",
+      "replace": "已工作 $1 分 $2 秒"
+    },
+    {
+      "regex": "^Worked for (\\d+)h$",
+      "flags": "i",
+      "replace": "已工作 $1 小时"
+    },
+    {
+      "regex": "^Worked for (\\d+)m$",
+      "flags": "i",
+      "replace": "已工作 $1 分钟"
+    },
+    {
+      "regex": "^Worked for (\\d+)s$",
+      "flags": "i",
+      "replace": "已工作 $1 秒"
+    },
+    {
+      "regex": "^Thought for (\\d+)m\\s+(\\d+)s$",
+      "flags": "i",
+      "replace": "已思考 $1 分 $2 秒"
+    },
+    {
+      "regex": "^Thought for (\\d+)m$",
+      "flags": "i",
+      "replace": "已思考 $1 分钟"
+    },
+    {
+      "regex": "^Thought for (\\d+)s$",
+      "flags": "i",
+      "replace": "已思考 $1 秒"
+    },
     {
       "regex": "^(\\d+)\\s+files?\\s+changed$",
       "flags": "i",

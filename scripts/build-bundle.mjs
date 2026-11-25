@@ -73,6 +73,7 @@ export function loadAndValidateLocales(rootDir = ROOT_DIR) {
 
     const exact = {};
     const patterns = [];
+    const scoped = [];
     const menu = {};
 
     const modules = Array.isArray(meta.modules) ? meta.modules : [];
@@ -100,6 +101,34 @@ export function loadAndValidateLocales(rootDir = ROOT_DIR) {
         }
       }
 
+      if (Array.isArray(modData.scoped)) {
+        for (const sc of modData.scoped) {
+          if (!sc || typeof sc.selector !== 'string' || !sc.selector.trim()) {
+            throw new Error(`Invalid scoped entry (missing selector) in ${modPath}`);
+          }
+          const scExact = {};
+          if (sc.exact && typeof sc.exact === 'object') {
+            for (const [k, v] of Object.entries(sc.exact)) {
+              if (typeof v !== 'string' || !v.trim()) {
+                throw new Error(`Empty scoped translation for key "${k}" in ${modPath}`);
+              }
+              scExact[k] = v;
+            }
+          }
+          const scPatterns = [];
+          if (Array.isArray(sc.patterns)) {
+            for (const pat of sc.patterns) {
+              if (!pat.regex || typeof pat.replace !== 'string') {
+                throw new Error(`Invalid scoped pattern entry in ${modPath}`);
+              }
+              new RegExp(pat.regex, pat.flags || '');
+              scPatterns.push(pat);
+            }
+          }
+          scoped.push({ selector: sc.selector.trim(), exact: scExact, patterns: scPatterns });
+        }
+      }
+
       if (modData.menu && typeof modData.menu === 'object') {
         for (const [k, v] of Object.entries(modData.menu)) {
           if (typeof v !== 'string' || !v.trim()) {
@@ -124,6 +153,7 @@ export function loadAndValidateLocales(rootDir = ROOT_DIR) {
       ui: meta.ui || {},
       exact,
       patterns,
+      scoped,
     });
 
     menuLocales[meta.code] = menu;

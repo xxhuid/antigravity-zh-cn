@@ -287,16 +287,155 @@ const UI_CSS = `
 }
 `;
 
-function isInsideNavigation(el) {
+const ANCHOR_FORBIDDEN_TAGS = new Set([
+  'NAV',
+  'ASIDE',
+  'BUTTON',
+  'A',
+  'CODE',
+  'PRE',
+  'KBD',
+  'SAMP',
+  'VAR',
+  'LI',
+  'UL',
+  'OL',
+  'BLOCKQUOTE',
+  'SCRIPT',
+  'STYLE',
+  'TEXTAREA',
+  'INPUT',
+  'SELECT',
+  'SVG',
+  'IFRAME',
+]);
+
+const ANCHOR_FORBIDDEN_ROLES = new Set([
+  'navigation',
+  'tablist',
+  'tab',
+  'button',
+  'tree',
+  'treeitem',
+  'textbox',
+  'code',
+]);
+
+const ANCHOR_FORBIDDEN_TESTIDS = new Set([
+  'user-message-content',
+  'planner-response-text',
+  'user-input-step',
+  'conversation-row-sidebar',
+  'customization-name',
+  'customization-description',
+]);
+
+const ANCHOR_FORBIDDEN_CLASSES = [
+  'user-message-content',
+  'planner-response-text',
+  'user-input-step',
+  'markdown-body',
+  'prose',
+  'monaco-editor',
+  'xterm',
+  'cm-editor',
+  'CodeMirror',
+];
+
+const FALLBACK_HEADING_TAGS = new Set(['DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'SECTION', 'HEADER']);
+
+const SETTINGS_CONTEXT_MARKERS = new Set([
+  'General',
+  '通用',
+  'Software Engineering',
+  '软件工程模式',
+  'Configure agent execution, queued message delivery, and permissions.',
+  '配置 Agent 执行方式、排队消息发送策略与权限规则。',
+]);
+
+function isForbiddenAnchorContainer(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const tag = (el.tagName || '').toUpperCase();
+  if (ANCHOR_FORBIDDEN_TAGS.has(tag)) return true;
+
+  const getAttr = (name) =>
+    typeof el.getAttribute === 'function'
+      ? el.getAttribute(name)
+      : el.attributes && Object.prototype.hasOwnProperty.call(el.attributes, name)
+        ? el.attributes[name]
+        : null;
+
+  if (
+    getAttr('data-ag-i18n-ui') !== null ||
+    getAttr('data-ag-i18n-ignore') !== null ||
+    getAttr('data-markdown-root') !== null ||
+    getAttr('data-terminal') !== null
+  ) {
+    return true;
+  }
+
+  const ce = getAttr('contenteditable');
+  if (ce === 'true' || ce === '') return true;
+
+  const role = getAttr('role');
+  if (role && ANCHOR_FORBIDDEN_ROLES.has(role)) return true;
+
+  const testId = getAttr('data-testid');
+  if (testId && ANCHOR_FORBIDDEN_TESTIDS.has(testId)) return true;
+
+  const className = typeof el.className === 'string' ? el.className : getAttr('class') || '';
+  if (className) {
+    const tokens = className.split(/\s+/);
+    for (let i = 0; i < ANCHOR_FORBIDDEN_CLASSES.length; i++) {
+      if (tokens.includes(ANCHOR_FORBIDDEN_CLASSES[i])) return true;
+    }
+  }
+  return false;
+}
+
+function isInsideForbiddenAnchorZone(el) {
   let cur = el;
   while (cur && cur.nodeType === 1) {
-    const tag = (cur.tagName || '').toUpperCase();
-    if (tag === 'NAV' || tag === 'ASIDE' || tag === 'BUTTON' || tag === 'A') return true;
-    const role = typeof cur.getAttribute === 'function' ? cur.getAttribute('role') : null;
-    if (role === 'navigation' || role === 'tablist' || role === 'tab' || role === 'button') {
+    if (isForbiddenAnchorContainer(cur)) return true;
+    cur = cur.parentElement || cur.parentNode || null;
+  }
+  return false;
+}
+
+function looksLikeSettingsContext(el) {
+  // Accept if inside a known settings modal/dialog container or alongside General settings peers
+  // (never ascend into BODY/HTML or inspect forbidden user-content containers as peers)
+  let cur = el;
+  for (let depth = 0; cur && cur.nodeType === 1 && depth < 5; depth++) {
+    const curTag = (cur.tagName || '').toUpperCase();
+    if (curTag === 'BODY' || curTag === 'HTML') break;
+
+    const className = typeof cur.className === 'string' ? cur.className : '';
+    const testId = typeof cur.getAttribute === 'function' ? cur.getAttribute('data-testid') : null;
+    if (
+      className.includes('settings-modal') ||
+      (testId && testId.includes('settings'))
+    ) {
       return true;
     }
-    cur = cur.parentElement || cur.parentNode || null;
+    const children = cur.childNodes || [];
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (child !== el && child.nodeType === 1 && !isForbiddenAnchorContainer(child)) {
+        const txt = (child.textContent || '').trim();
+        if (SETTINGS_CONTEXT_MARKERS.has(txt)) return true;
+        // Also inspect direct grandchildren for wrapped headers like <div><h2>General</h2><p>...</p></div>
+        const grandChildren = child.childNodes || [];
+        for (let g = 0; g < grandChildren.length; g++) {
+          const gc = grandChildren[g];
+          if (gc !== el && gc.nodeType === 1 && !isForbiddenAnchorContainer(gc)) {
+            const gTxt = (gc.textContent || '').trim();
+            if (SETTINGS_CONTEXT_MARKERS.has(gTxt)) return true;
+          }
+        }
+      }
+    }
+    cur = cur.parentElement || null;
   }
   return false;
 }
@@ -313,7 +452,8 @@ function walkElementsDeep(root, visitor) {
     const node = stack.pop();
     if (!node) continue;
     if (node.nodeType === 1) {
-      if (typeof node.getAttribute === 'function' && node.getAttribute('data-ag-i18n-ui')) {
+      // Prune navigation, code blocks, chat messages, Markdown bodies, and our own UI upfront
+      if (isForbiddenAnchorContainer(node)) {
         continue;
       }
       if (visitor(node) === true) return;
@@ -555,7 +695,7 @@ export function mountLanguageUI(translator, options = {}) {
     let fallbackMatch = null;
 
     walkElementsDeep(root, (el) => {
-      if (isInsideNavigation(el)) return false;
+      if (isInsideForbiddenAnchorZone(el)) return false;
       const hasElementChild = Array.from(el.childNodes || []).some((n) => n.nodeType === 1);
       if (hasElementChild) return false;
       const text = (el.textContent || '').trim();
@@ -565,7 +705,14 @@ export function mountLanguageUI(translator, options = {}) {
         subtitleMatch = { el, mode: 'after' };
         return true;
       }
-      if (!fallbackMatch && SETTINGS_FALLBACK_ANCHORS.has(text) && isElementVisible(el)) {
+      const tag = (el.tagName || '').toUpperCase();
+      if (
+        !fallbackMatch &&
+        FALLBACK_HEADING_TAGS.has(tag) &&
+        SETTINGS_FALLBACK_ANCHORS.has(text) &&
+        isElementVisible(el) &&
+        looksLikeSettingsContext(el)
+      ) {
         fallbackMatch = { el, mode: 'before' };
       }
       return false;
@@ -612,8 +759,10 @@ export function mountLanguageUI(translator, options = {}) {
         : null;
 
     if (!match || !match.el || !match.el.parentNode) {
-      if (existing) refreshSettingsSection(existing);
-      return Boolean(existing);
+      if (existing && existing.parentNode) {
+        existing.parentNode.removeChild(existing);
+      }
+      return false;
     }
 
     // If our section is already mounted inside the same container as the active anchor, just refresh

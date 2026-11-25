@@ -1,8 +1,19 @@
 /**
  * Antigravity UI i18n Core Engine
- * - Multi-language registry with instant runtime switching
- * - Strict DOM isolation (never mutates code blocks, terminals, inputs, or file paths)
- * - Original text/attribute WeakMap tracking for clean round-trip switching (zh-CN <-> en <-> other locales)
+ * - Multi-language registry with instant runtime switching (zh-CN <-> en <-> custom locales)
+ * - Strict DOM & user-content boundary isolation:
+ *     * Hard-skips code, terminals, editors, inputs, SVGs, iframes, and our own UI
+ *     * Protects user/AI message bodies, Markdown, file trees, conversation/project names,
+ *       and customization/plugin author descriptions (while still translating nested UI action buttons
+ *       in mixed containers like file tree items or conversation rows)
+ *     * Restores original text/attributes automatically if a node is moved into a protected container
+ * - Zero memory leaks: WeakMap-only node tracking (no strong Sets retaining detached DOM nodes)
+ * - High performance:
+ *     * Per-slice transient WeakMap mode cache (O(1) per element, no O(N * depth) ancestor re-walks)
+ *     * Per-locale translation memoization + fast ASCII short-circuit
+ *     * Overlap root deduplication + disconnected node pruning
+ *     * Frame-budgeted async mutation flushing (max 200 nodes / 6ms per rAF slice, never drops tail nodes)
+ * - Optional scoped dictionaries so context-specific terms never pollute global exact matching
  */
 
 const STORAGE_KEY_LOCALE = 'antigravity_i18n_locale';
@@ -25,9 +36,10 @@ const SKIP_TAGS = new Set([
   'CANVAS',
   'VIDEO',
   'AUDIO',
+  'IFRAME',
 ]);
 
-const SKIP_SELECTORS = [
+const HARD_SKIP_SELECTORS = [
   '[data-ag-i18n-ui]',
   '[data-ag-i18n-ignore]',
   '[contenteditable="true"]',
@@ -41,7 +53,47 @@ const SKIP_SELECTORS = [
   '[data-terminal]',
 ];
 
+// Strictly protected user/author content containers: nothing inside (including nested buttons) is translated
+const STRICT_PROTECTED_SELECTORS = [
+  '[data-markdown-root]',
+  '[data-testid="user-message-content"]',
+  '.user-message-content',
+  '[data-testid="planner-response-text"]',
+  '.planner-response-text',
+  '[data-testid="user-input-step"]',
+  '.user-input-step',
+  '.markdown-body',
+  '.prose',
+  '[data-uri][data-quotable-inline]',
+  '[data-testid="breadcrumb-segment"]',
+  '.breadcrumb-segment',
+  '[data-project-label]',
+  '[data-testid="conversation-title"]',
+  '[data-testid="customization-name"]',
+  '[data-testid="customization-description"]',
+  '[data-customization-author]',
+  '[data-plugin-description]',
+  '[data-skill-description]',
+];
+
+// Mixed containers: item names/plain text stay protected, while explicit UI action buttons inside can be translated
+const MIXED_PROTECTED_SELECTORS = [
+  '[role="tree"]',
+  '[role="treeitem"]',
+  '[data-testid="conversation-row-sidebar"]',
+  '[data-testid="project-header"]',
+];
+
 const TRANSLATABLE_ATTRS = ['placeholder', 'title', 'aria-label'];
+
+const MODE_TRANSLATE = 0;
+const MODE_PROTECTED_MIXED = 1;
+const MODE_PROTECTED_STRICT = 2;
+const MODE_HARD_SKIP = 3;
+
+const MAX_TRANSLATION_CACHE_SIZE = 4000;
+const ASYNC_SLICE_NODE_BUDGET = 200;
+const ASYNC_SLICE_TIME_BUDGET_MS = 6;
 
 const DEFAULT_EN_UI = {
   sectionTitle: 'Language',
@@ -60,7 +112,8 @@ const DEFAULT_EN_UI = {
 
 function isLikelyNonUIText(trimmed) {
   if (!trimmed || trimmed.length > 260) return true;
-  // Pure digits, punctuation, or whitespace
+  // Pure digits, punctuation, or whitespace (or non-ASCII-only text with no Latin letters)
+  if (!/[A-Za-z]/.test(trimmed)) return true;
   if (/^[\d\s.,:;!?+\-*/=<>()[\]{}|\\/@#$%^&~`'"]+$/.test(trimmed)) return true;
   // URLs
   if (/^https?:\/\//i.test(trimmed)) return true;
@@ -94,57 +147,206 @@ function compilePatterns(patterns) {
   return compiled;
 }
 
-function elementMatchesAnySelector(el, selectors) {
-  if (!el || typeof el !== 'object') return false;
-  if (typeof el.closest === 'function') {
-    for (const sel of selectors) {
-      try {
-        if (el.closest(sel)) return true;
-      } catch {
-        // Ignore selector errors in minimal DOM environments
-      }
-    }
-    return false;
+function compileScopedEntries(scoped) {
+  if (!Array.isArray(scoped)) return [];
+  const compiled = [];
+  for (const entry of scoped) {
+    if (!entry || typeof entry.selector !== 'string' || !entry.selector.trim()) continue;
+    const exact = Object.assign({}, entry.exact || {});
+    const patterns = compilePatterns(entry.patterns || []);
+    if (Object.keys(exact).length === 0 && patterns.length === 0) continue;
+    compiled.push({
+      selector: entry.selector.trim(),
+      exact,
+      patterns,
+    });
   }
-  // Fallback traversal for minimal mock DOMs without Element.closest
-  let cur = el;
-  while (cur) {
-    const attrs = cur.attributes || {};
-    const getAttr = (name) =>
-      typeof cur.getAttribute === 'function' ? cur.getAttribute(name) : attrs[name];
-    if (getAttr('data-ag-i18n-ui') !== null && getAttr('data-ag-i18n-ui') !== undefined) {
-      return true;
+  return compiled;
+}
+
+function getElementAttr(el, name) {
+  if (!el || typeof el !== 'object') return null;
+  if (typeof el.getAttribute === 'function') return el.getAttribute(name);
+  if (el.attributes && Object.prototype.hasOwnProperty.call(el.attributes, name)) {
+    return el.attributes[name];
+  }
+  return null;
+}
+
+function hasElementClass(el, cls) {
+  const className = typeof el.className === 'string' ? el.className : getElementAttr(el, 'class') || '';
+  if (!className) return false;
+  return className.split(/\s+/).includes(cls);
+}
+
+/**
+ * Check whether a single element (NOT its ancestors) matches a simple or compound selector.
+ * Supports real browser Element.matches and minimal Mock DOMs without Element.matches.
+ */
+function elementMatchesSelf(el, selector) {
+  if (!el || el.nodeType !== 1) return false;
+  if (typeof el.matches === 'function') {
+    try {
+      return el.matches(selector);
+    } catch {
+      return false;
     }
-    if (getAttr('data-ag-i18n-ignore') !== null && getAttr('data-ag-i18n-ignore') !== undefined) {
-      return true;
-    }
-    const ce = getAttr('contenteditable');
-    if (ce === 'true' || ce === '') return true;
-    const role = getAttr('role');
-    if (role === 'textbox' || role === 'code') return true;
-    const className = typeof cur.className === 'string' ? cur.className : '';
-    if (
-      className.includes('monaco-editor') ||
-      className.includes('xterm') ||
-      className.includes('cm-editor') ||
-      className.includes('CodeMirror')
-    ) {
-      return true;
-    }
-    cur = cur.parentElement || cur.parentNode || null;
+  }
+  const s = selector.trim();
+  // Compound attribute selector like `[data-uri][data-quotable-inline]`
+  if (/^(\[[^\]]+\]){2,}$/.test(s)) {
+    const parts = s.match(/\[[^\]]+\]/g) || [];
+    return parts.every((part) => elementMatchesSelf(el, part));
+  }
+  if (s.startsWith('.')) {
+    return hasElementClass(el, s.slice(1));
+  }
+  const attrEq = s.match(/^\[([^=\]]+)="([^"]*)"\]$/);
+  if (attrEq) {
+    return getElementAttr(el, attrEq[1]) === attrEq[2];
+  }
+  const attrHas = s.match(/^\[([^=\]]+)\]$/);
+  if (attrHas) {
+    const val = getElementAttr(el, attrHas[1]);
+    return val !== null && val !== undefined;
+  }
+  if (typeof el.matchesSimple === 'function') {
+    return el.matchesSimple(s);
+  }
+  return (el.tagName || '').toUpperCase() === s.toUpperCase();
+}
+
+function elementMatchesAnySelf(el, selectors) {
+  for (let i = 0; i < selectors.length; i++) {
+    if (elementMatchesSelf(el, selectors[i])) return true;
   }
   return false;
 }
 
+function isExplicitActionControl(el) {
+  if (!el || el.nodeType !== 1) return false;
+  const tag = (el.tagName || '').toUpperCase();
+  const role = getElementAttr(el, 'role');
+  const isButtonLike = tag === 'BUTTON' || role === 'button' || role === 'menuitem';
+  if (!isButtonLike) return false;
+  // File links or project-label triggers masquerading as buttons must stay protected
+  if (
+    getElementAttr(el, 'data-uri') !== null ||
+    getElementAttr(el, 'data-project-label') !== null ||
+    getElementAttr(el, 'data-quotable-inline') !== null
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Compute element translation mode given its parent's already-known mode (O(1) per element).
+ */
+function classifyElementFromParent(el, parentMode) {
+  if (!el || el.nodeType !== 1) return MODE_TRANSLATE;
+  if (parentMode === MODE_HARD_SKIP) return MODE_HARD_SKIP;
+
+  const tag = (el.tagName || '').toUpperCase();
+  if (SKIP_TAGS.has(tag) || elementMatchesAnySelf(el, HARD_SKIP_SELECTORS)) {
+    return MODE_HARD_SKIP;
+  }
+
+  if (parentMode === MODE_PROTECTED_STRICT) return MODE_PROTECTED_STRICT;
+
+  if (elementMatchesAnySelf(el, STRICT_PROTECTED_SELECTORS)) {
+    return MODE_PROTECTED_STRICT;
+  }
+
+  // Links inside conversation-row-sidebar carry conversation titles -> strict protection
+  if (
+    parentMode === MODE_PROTECTED_MIXED &&
+    tag === 'A' &&
+    typeof el.closest === 'function' &&
+    el.closest('[data-testid="conversation-row-sidebar"]')
+  ) {
+    return MODE_PROTECTED_STRICT;
+  }
+
+  if (parentMode === MODE_PROTECTED_MIXED) {
+    // Allow explicit UI action buttons (e.g. Copy / Delete / Pin) inside mixed rows/trees
+    if (isExplicitActionControl(el)) {
+      return MODE_TRANSLATE;
+    }
+    return MODE_PROTECTED_MIXED;
+  }
+
+  if (elementMatchesAnySelf(el, MIXED_PROTECTED_SELECTORS)) {
+    return MODE_PROTECTED_MIXED;
+  }
+
+  return MODE_TRANSLATE;
+}
+
+/**
+ * Resolve element mode by walking ancestors once, optionally reusing a transient per-slice WeakMap.
+ */
+function resolveElementMode(el, modeCache = null) {
+  if (!el || el.nodeType !== 1) return MODE_TRANSLATE;
+  if (modeCache && modeCache.has(el)) return modeCache.get(el);
+
+  // Collect ancestor chain up to the first cached node or document root
+  const chain = [];
+  let cur = el;
+  let baseMode = MODE_TRANSLATE;
+  while (cur && cur.nodeType === 1) {
+    if (modeCache && modeCache.has(cur)) {
+      baseMode = modeCache.get(cur);
+      break;
+    }
+    chain.push(cur);
+    cur = cur.parentElement || (cur.parentNode && cur.parentNode.nodeType === 1 ? cur.parentNode : null);
+  }
+
+  let mode = baseMode;
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const node = chain[i];
+    mode = classifyElementFromParent(node, mode);
+    if (modeCache) modeCache.set(node, mode);
+  }
+  return mode;
+}
+
+/**
+ * Public helper: returns true if text directly inside `el` should NOT be translated.
+ */
 export function shouldSkipElement(el) {
   if (!el || el.nodeType !== 1) return false;
-  let cur = el;
-  while (cur && cur.nodeType === 1) {
-    const tag = (cur.tagName || '').toUpperCase();
-    if (SKIP_TAGS.has(tag)) return true;
-    cur = cur.parentElement || cur.parentNode || null;
+  return resolveElementMode(el, null) !== MODE_TRANSLATE;
+}
+
+function isNodeConnected(node, fallbackRoot) {
+  if (!node) return false;
+  if (typeof node.isConnected === 'boolean') return node.isConnected;
+  let cur = node;
+  while (cur) {
+    if (cur === fallbackRoot) return true;
+    cur = cur.parentNode || cur.parentElement || null;
   }
-  return elementMatchesAnySelector(el, SKIP_SELECTORS);
+  return false;
+}
+
+function nodeContains(ancestor, descendant) {
+  if (!ancestor || !descendant) return false;
+  if (ancestor === descendant) return true;
+  if (typeof ancestor.contains === 'function') {
+    try {
+      return ancestor.contains(descendant);
+    } catch {
+      // Fall through to parent walk
+    }
+  }
+  let cur = descendant.parentNode || descendant.parentElement || null;
+  while (cur) {
+    if (cur === ancestor) return true;
+    cur = cur.parentNode || cur.parentElement || null;
+  }
+  return false;
 }
 
 export function createTranslator(bundle, options = {}) {
@@ -177,13 +379,17 @@ export function createTranslator(bundle, options = {}) {
       exact,
       exactLower,
       patterns: compilePatterns(pack.patterns || []),
+      scoped: compileScopedEntries(pack.scoped || []),
     };
     if (!locales.has(normalized.code)) {
       localeOrder.push(normalized.code);
     }
     locales.set(normalized.code, normalized);
+    translationCache.clear();
     return normalized;
   }
+
+  const translationCache = new Map();
 
   // Register locales from compiled bundle
   const initialLocales = (bundle && bundle.locales) || [];
@@ -200,6 +406,7 @@ export function createTranslator(bundle, options = {}) {
       ui: DEFAULT_EN_UI,
       exact: {},
       patterns: [],
+      scoped: [],
     });
   }
 
@@ -218,63 +425,173 @@ export function createTranslator(bundle, options = {}) {
 
   let currentLocale = readSavedLocale();
   const listeners = new Set();
+
+  // WeakMap-only tracking: detached DOM nodes are automatically garbage-collected (zero memory leak)
   const originalTextMap = new WeakMap();
   const originalAttrMap = new WeakMap();
   const lastAppliedTextMap = new WeakMap();
   const lastAppliedAttrMap = new WeakMap();
-  const trackedTextNodes = new Set();
-  const trackedElements = new Set();
-  const trackedMergedParents = new Set();
   const mergedParentOriginals = new WeakMap();
 
   const AMBIGUOUS_SHORT_WORDS = new Set(['No', 'Yes', 'On', 'Off', 'In', 'Or', 'To', 'By', 'At']);
 
   let isApplying = false;
   let observer = null;
+  let observedRoot = null;
   let scheduledFlush = null;
+  let flushCallback = null;
   const pendingRoots = new Set();
+  const asyncWorkStack = [];
+
+  const getNow =
+    win && win.performance && typeof win.performance.now === 'function'
+      ? () => win.performance.now()
+      : () => Date.now();
 
   function getLocaleMeta(code = currentLocale) {
     return locales.get(code) || locales.get('en');
   }
 
-  function translateString(rawText, localeCode = currentLocale) {
+  function cacheTranslation(cacheKey, value) {
+    if (translationCache.size >= MAX_TRANSLATION_CACHE_SIZE) {
+      translationCache.clear();
+    }
+    translationCache.set(cacheKey, value);
+    return value;
+  }
+
+  function lookupCoreTranslation(core, pack) {
+    // 1. Exact dictionary match always wins (even for long descriptions)
+    if (Object.prototype.hasOwnProperty.call(pack.exact, core)) {
+      return pack.exact[core];
+    }
+
+    // 2. Multi-word case-insensitive fallback (handles Title Case vs Sentence case safely)
+    if (core.includes(' ')) {
+      const lowerKey = core.toLowerCase();
+      if (pack.exactLower && lowerKey in pack.exactLower) {
+        return pack.exactLower[lowerKey];
+      }
+    }
+
+    if (isLikelyNonUIText(core)) return null;
+
+    // 3. Regex patterns
+    for (let i = 0; i < pack.patterns.length; i++) {
+      const entry = pack.patterns[i];
+      if (entry.re.test(core)) {
+        const replaced = core.replace(entry.re, entry.replace);
+        entry.re.lastIndex = 0;
+        if (replaced !== core) {
+          return replaced;
+        }
+      }
+    }
+
+    // 4. Trailing punctuation stripping (e.g. "Settings:" -> "设置：", "Loading..." -> "加载中...")
+    const puncMatch = core.match(/^([\w\s\-/]+?)([:：…?!]+|\.{3})$/);
+    if (puncMatch) {
+      const base = puncMatch[1].trim();
+      const punc = puncMatch[2];
+      const baseTranslated = Object.prototype.hasOwnProperty.call(pack.exact, base)
+        ? pack.exact[base]
+        : base.includes(' ') && pack.exactLower && base.toLowerCase() in pack.exactLower
+          ? pack.exactLower[base.toLowerCase()]
+          : null;
+      if (baseTranslated) {
+        const localizedPunc =
+          pack.code.startsWith('zh') && punc === ':' ? '：' : punc;
+        return `${baseTranslated}${localizedPunc}`;
+      }
+    }
+
+    // 5. Hotkey suffix preservation (e.g. "Command Palette (Ctrl+Shift+P)", "Archive Conversation Ctrl+Alt+A", "Pin ⌥⇧P")
+    const hotkeyMatch = core.match(
+      /^([\w\s\-/]+?)\s+(\((?:Ctrl|Cmd|Alt|Shift|⌘|⌥|⌃|⇧)[^)]+\)|(?:Ctrl|Cmd|Alt|Shift)\+[\w;:,/+\-]+|[⌘⌥⌃⇧]+[\w;:,/+\-]+)$/i,
+    );
+    if (hotkeyMatch) {
+      const base = hotkeyMatch[1].trim();
+      const hotkey = hotkeyMatch[2].trim();
+      const baseTranslated = Object.prototype.hasOwnProperty.call(pack.exact, base)
+        ? pack.exact[base]
+        : base.includes(' ') && pack.exactLower && base.toLowerCase() in pack.exactLower
+          ? pack.exactLower[base.toLowerCase()]
+          : null;
+      if (baseTranslated) {
+        return `${baseTranslated} ${hotkey}`;
+      }
+    }
+
+    return null;
+  }
+
+  function translateScopedString(core, el, pack) {
+    if (!pack.scoped || pack.scoped.length === 0 || !el || el.nodeType !== 1) return null;
+    for (let i = 0; i < pack.scoped.length; i++) {
+      const scope = pack.scoped[i];
+      let inScope = false;
+      if (typeof el.closest === 'function') {
+        try {
+          inScope = Boolean(el.closest(scope.selector));
+        } catch {
+          inScope = false;
+        }
+      } else {
+        let cur = el;
+        while (cur && cur.nodeType === 1) {
+          if (elementMatchesSelf(cur, scope.selector)) {
+            inScope = true;
+            break;
+          }
+          cur = cur.parentElement || null;
+        }
+      }
+      if (!inScope) continue;
+      if (Object.prototype.hasOwnProperty.call(scope.exact, core)) {
+        return scope.exact[core];
+      }
+      for (let p = 0; p < scope.patterns.length; p++) {
+        const entry = scope.patterns[p];
+        if (entry.re.test(core)) {
+          const replaced = core.replace(entry.re, entry.replace);
+          entry.re.lastIndex = 0;
+          if (replaced !== core) return replaced;
+        }
+      }
+    }
+    return null;
+  }
+
+  function translateString(rawText, localeCode = currentLocale, contextEl = null) {
     if (typeof rawText !== 'string' || !rawText) return rawText;
     const pack = locales.get(localeCode);
     if (!pack || pack.builtin || localeCode === 'en') {
       return rawText;
     }
 
+    const core = normalizeWhitespace(rawText);
+    if (!core || !/[A-Za-z]/.test(core)) return rawText;
+
     const leading = rawText.match(/^\s*/)[0];
     const trailing = rawText.match(/\s*$/)[0];
-    const core = normalizeWhitespace(rawText);
-    if (!core) return rawText;
 
-    // Exact dictionary matches always win (even for longer Settings descriptions)
-    if (Object.prototype.hasOwnProperty.call(pack.exact, core)) {
-      return `${leading}${pack.exact[core]}${trailing}`;
-    }
-
-    // Multi-word case-insensitive fallback (handles Title Case vs Sentence case variants safely)
-    if (core.includes(' ')) {
-      const lowerKey = core.toLowerCase();
-      if (pack.exactLower && lowerKey in pack.exactLower) {
-        return `${leading}${pack.exactLower[lowerKey]}${trailing}`;
+    // Scoped dictionary takes precedence inside matching containers (never cached globally)
+    if (contextEl && pack.scoped && pack.scoped.length > 0) {
+      const scopedHit = translateScopedString(core, contextEl, pack);
+      if (scopedHit !== null) {
+        return `${leading}${scopedHit}${trailing}`;
       }
     }
 
-    if (isLikelyNonUIText(core)) return rawText;
-
-    for (const entry of pack.patterns) {
-      if (entry.re.test(core)) {
-        const replaced = core.replace(entry.re, entry.replace);
-        if (replaced !== core) {
-          return `${leading}${replaced}${trailing}`;
-        }
-      }
+    const cacheKey = `${localeCode}\u0000${core}`;
+    if (translationCache.has(cacheKey)) {
+      const cached = translationCache.get(cacheKey);
+      return cached === null ? rawText : `${leading}${cached}${trailing}`;
     }
 
-    return rawText;
+    const hit = lookupCoreTranslation(core, pack);
+    cacheTranslation(cacheKey, hit);
+    return hit === null ? rawText : `${leading}${hit}${trailing}`;
   }
 
   function isFollowedByEnglishSibling(node) {
@@ -311,6 +628,33 @@ export function createTranslator(bundle, options = {}) {
     }
   }
 
+  function restoreTextNodeIfTranslated(node) {
+    if (!originalTextMap.has(node)) return;
+    const orig = originalTextMap.get(node);
+    originalTextMap.delete(node);
+    setNodeValueTracked(node, orig);
+  }
+
+  function restoreMergedParentIfTranslated(el) {
+    const snapshot = mergedParentOriginals.get(el);
+    if (!snapshot) return;
+    mergedParentOriginals.delete(el);
+    for (let i = 0; i < snapshot.nodes.length; i++) {
+      const child = snapshot.nodes[i];
+      originalTextMap.delete(child);
+      setNodeValueTracked(child, snapshot.texts[i]);
+    }
+  }
+
+  function restoreElementAttrsIfTranslated(el) {
+    const attrCache = originalAttrMap.get(el);
+    if (!attrCache) return;
+    originalAttrMap.delete(el);
+    for (const [attr, origVal] of attrCache.entries()) {
+      setAttrTracked(el, attr, origVal);
+    }
+  }
+
   function drainSelfMutations() {
     if (observer && typeof observer.takeRecords === 'function') {
       try {
@@ -321,8 +665,7 @@ export function createTranslator(bundle, options = {}) {
     }
   }
 
-  function resolveNodeTranslation(node, sourceText) {
-    const parent = node.parentElement || node.parentNode;
+  function resolveNodeTranslation(node, sourceText, parent) {
     // Guard against mis-translating split English phrases like `<span>No</span> automations yet`
     if (AMBIGUOUS_SHORT_WORDS.has(sourceText.trim()) && isFollowedByEnglishSibling(node)) {
       return sourceText;
@@ -339,31 +682,47 @@ export function createTranslator(bundle, options = {}) {
       return `${leading}${isCreateBtn ? '新建' : '新'}${trailing}`;
     }
 
-    return translateString(sourceText, currentLocale);
+    return translateString(sourceText, currentLocale, parent);
   }
 
-  function processTextNode(node) {
+  function processTextNode(node, parentMode = null, modeCache = null) {
     if (!node || node.nodeType !== 3) return;
     const parent = node.parentElement || node.parentNode;
-    if (!parent || shouldSkipElement(parent)) return;
+    if (!parent || parent.nodeType !== 1) return;
+
+    const mode = parentMode !== null ? parentMode : resolveElementMode(parent, modeCache);
+    if (mode !== MODE_TRANSLATE) {
+      // If a previously translated node was moved into a protected container, restore original text
+      restoreTextNodeIfTranslated(node);
+      return;
+    }
 
     const currentValue = node.nodeValue;
     if (typeof currentValue !== 'string' || !currentValue.trim()) return;
 
-    if (!originalTextMap.has(node)) {
-      originalTextMap.set(node, currentValue);
-      trackedTextNodes.add(node);
-    }
+    const hasOrig = originalTextMap.has(node);
+    const sourceText = hasOrig ? originalTextMap.get(node) : currentValue;
+    const nextValue = resolveNodeTranslation(node, sourceText, parent);
 
-    const sourceText = originalTextMap.get(node);
-    setNodeValueTracked(node, resolveNodeTranslation(node, sourceText));
+    if (nextValue !== sourceText) {
+      if (!hasOrig) originalTextMap.set(node, sourceText);
+      setNodeValueTracked(node, nextValue);
+    } else if (hasOrig) {
+      // Switching back to English or text no longer translates -> restore and release WeakMap entry
+      originalTextMap.delete(node);
+      setNodeValueTracked(node, sourceText);
+    }
   }
 
   /**
    * Handle React-split adjacent text nodes inside a single element (e.g. `<div>{"No"}{" automations yet"}</div>`).
-   * Returns true if the element's text children were translated as a merged phrase.
+   * Returns true if the element's text children were handled as a merged phrase.
    */
-  function tryProcessMergedTextChildren(el) {
+  function tryProcessMergedTextChildren(el, elMode = MODE_TRANSLATE) {
+    if (elMode !== MODE_TRANSLATE) {
+      restoreMergedParentIfTranslated(el);
+      return false;
+    }
     const children = el.childNodes;
     if (!children || children.length < 2) return false;
     for (let i = 0; i < children.length; i++) {
@@ -375,17 +734,20 @@ export function createTranslator(bundle, options = {}) {
       const nodes = Array.from(children);
       const texts = nodes.map((n) => (originalTextMap.has(n) ? originalTextMap.get(n) : n.nodeValue || ''));
       const combined = texts.join('');
-      const probe = translateString(combined, currentLocale);
+      const probe = translateString(combined, currentLocale, el);
       if (probe === combined && currentLocale !== 'en') {
+        return false;
+      }
+      if (probe === combined && !snapshot) {
         return false;
       }
       snapshot = { nodes, texts, combined };
       mergedParentOriginals.set(el, snapshot);
-      trackedMergedParents.add(el);
     }
 
-    const nextCombined = translateString(snapshot.combined, currentLocale);
+    const nextCombined = translateString(snapshot.combined, currentLocale, el);
     if (nextCombined === snapshot.combined) {
+      mergedParentOriginals.delete(el);
       for (let i = 0; i < snapshot.nodes.length; i++) {
         setNodeValueTracked(snapshot.nodes[i], snapshot.texts[i]);
       }
@@ -398,32 +760,107 @@ export function createTranslator(bundle, options = {}) {
     return true;
   }
 
-  function processElementAttributes(el) {
+  function processElementAttributes(el, elMode, parentMode = null, modeCache = null) {
     if (!el || el.nodeType !== 1) return;
-    // Allow placeholder/aria-label/title on INPUT/TEXTAREA unless explicitly ignored,
-    // while still skipping our own UI and code/terminal containers.
-    const tag = (el.tagName || '').toUpperCase();
-    const isInputLike = tag === 'INPUT' || tag === 'TEXTAREA';
-    if (!isInputLike && shouldSkipElement(el)) return;
-    if (isInputLike && elementMatchesAnySelector(el, SKIP_SELECTORS)) return;
-
     if (typeof el.getAttribute !== 'function' || typeof el.setAttribute !== 'function') return;
 
+    const tag = (el.tagName || '').toUpperCase();
+    const isInputLike = tag === 'INPUT' || tag === 'TEXTAREA';
+
+    let allowAttrs = elMode === MODE_TRANSLATE;
+    if (isInputLike) {
+      // Allow placeholder/aria-label/title on INPUT/TEXTAREA unless inside hard-skip or protected content
+      const effectiveParentMode =
+        parentMode !== null
+          ? parentMode
+          : el.parentElement
+            ? resolveElementMode(el.parentElement, modeCache)
+            : MODE_TRANSLATE;
+      allowAttrs =
+        effectiveParentMode === MODE_TRANSLATE &&
+        !elementMatchesAnySelf(el, HARD_SKIP_SELECTORS) &&
+        !elementMatchesAnySelf(el, STRICT_PROTECTED_SELECTORS);
+    }
+
+    if (!allowAttrs) {
+      restoreElementAttrsIfTranslated(el);
+      return;
+    }
+
     let attrCache = originalAttrMap.get(el);
-    for (const attr of TRANSLATABLE_ATTRS) {
+    for (let i = 0; i < TRANSLATABLE_ATTRS.length; i++) {
+      const attr = TRANSLATABLE_ATTRS[i];
       const val = el.getAttribute(attr);
       if (typeof val !== 'string' || !val.trim()) continue;
-      if (!attrCache) {
-        attrCache = new Map();
-        originalAttrMap.set(el, attrCache);
-        trackedElements.add(el);
+
+      const hasOrig = Boolean(attrCache && attrCache.has(attr));
+      const sourceVal = hasOrig ? attrCache.get(attr) : val;
+      const nextVal = translateString(sourceVal, currentLocale, el);
+
+      if (nextVal !== sourceVal) {
+        if (!attrCache) {
+          attrCache = new Map();
+          originalAttrMap.set(el, attrCache);
+        }
+        if (!hasOrig) attrCache.set(attr, sourceVal);
+        setAttrTracked(el, attr, nextVal);
+      } else if (hasOrig) {
+        attrCache.delete(attr);
+        if (attrCache.size === 0) originalAttrMap.delete(el);
+        setAttrTracked(el, attr, sourceVal);
       }
-      if (!attrCache.has(attr)) {
-        attrCache.set(attr, val);
+    }
+  }
+
+  function visitNode(node, parentMode, modeCache, stack) {
+    if (!node) return;
+
+    if (node.nodeType === 3) {
+      processTextNode(node, parentMode, modeCache);
+      return;
+    }
+
+    if (node.nodeType === 1) {
+      const elMode =
+        parentMode !== null
+          ? classifyElementFromParent(node, parentMode)
+          : resolveElementMode(node, modeCache);
+      modeCache.set(node, elMode);
+
+      processElementAttributes(node, elMode, parentMode, modeCache);
+
+      if (elMode === MODE_HARD_SKIP) {
+        return;
       }
-      const sourceVal = attrCache.get(attr);
-      const nextVal = translateString(sourceVal, currentLocale);
-      setAttrTracked(el, attr, nextVal);
+
+      if (elMode !== MODE_TRANSLATE) {
+        // Restore any previously merged/translated children if this subtree was moved into protected content
+        restoreMergedParentIfTranslated(node);
+      }
+
+      if (node.shadowRoot) {
+        stack.push({ node: node.shadowRoot, parentMode: elMode });
+      }
+
+      if (elMode === MODE_TRANSLATE && tryProcessMergedTextChildren(node, elMode)) {
+        return;
+      }
+
+      const children = node.childNodes;
+      if (children && children.length) {
+        for (let i = children.length - 1; i >= 0; i--) {
+          stack.push({ node: children[i], parentMode: elMode });
+        }
+      }
+      return;
+    }
+
+    // DocumentFragment / ShadowRoot / Document
+    const children = node.childNodes;
+    if (children && children.length) {
+      for (let i = children.length - 1; i >= 0; i--) {
+        stack.push({ node: children[i], parentMode });
+      }
     }
   }
 
@@ -431,74 +868,18 @@ export function createTranslator(bundle, options = {}) {
     if (!root) return;
     const prevApplying = isApplying;
     isApplying = true;
+    const modeCache = new WeakMap();
     try {
-      const stack = [root];
+      const initialParentMode =
+        root.nodeType === 1 && root.parentElement
+          ? resolveElementMode(root.parentElement, modeCache)
+          : root.nodeType === 3 && root.parentElement
+            ? resolveElementMode(root.parentElement, modeCache)
+            : null;
+      const stack = [{ node: root, parentMode: initialParentMode }];
       while (stack.length > 0) {
-        const node = stack.pop();
-        if (!node) continue;
-
-        if (node.nodeType === 3) {
-          processTextNode(node);
-          continue;
-        }
-
-        if (node.nodeType === 1) {
-          processElementAttributes(node);
-          if (shouldSkipElement(node)) continue;
-          if (node.shadowRoot) {
-            stack.push(node.shadowRoot);
-          }
-          if (tryProcessMergedTextChildren(node)) {
-            continue;
-          }
-        }
-
-        const children = node.childNodes;
-        if (children && children.length) {
-          for (let i = children.length - 1; i >= 0; i--) {
-            stack.push(children[i]);
-          }
-        }
-      }
-    } finally {
-      if (!prevApplying) drainSelfMutations();
-      isApplying = prevApplying;
-    }
-  }
-
-  function reapplyAllTracked() {
-    const prevApplying = isApplying;
-    isApplying = true;
-    try {
-      for (const el of Array.from(trackedMergedParents)) {
-        if (!el.parentNode) {
-          trackedMergedParents.delete(el);
-          continue;
-        }
-        tryProcessMergedTextChildren(el);
-      }
-
-      for (const node of Array.from(trackedTextNodes)) {
-        if (!node.parentNode) {
-          trackedTextNodes.delete(node);
-          continue;
-        }
-        const sourceText = originalTextMap.get(node);
-        if (typeof sourceText !== 'string') continue;
-        setNodeValueTracked(node, resolveNodeTranslation(node, sourceText));
-      }
-
-      for (const el of Array.from(trackedElements)) {
-        if (!el.parentNode) {
-          trackedElements.delete(el);
-          continue;
-        }
-        const attrCache = originalAttrMap.get(el);
-        if (!attrCache) continue;
-        for (const [attr, sourceVal] of attrCache.entries()) {
-          const nextVal = translateString(sourceVal, currentLocale);
-          setAttrTracked(el, attr, nextVal);
-        }
+        const item = stack.pop();
+        visitNode(item.node, item.parentMode, modeCache, stack);
       }
     } finally {
       if (!prevApplying) drainSelfMutations();
@@ -523,6 +904,7 @@ export function createTranslator(bundle, options = {}) {
     }
     const changed = code !== currentLocale;
     currentLocale = code;
+    translationCache.clear();
 
     try {
       if (storage && typeof storage.setItem === 'function') {
@@ -533,9 +915,14 @@ export function createTranslator(bundle, options = {}) {
     }
 
     syncDocumentLang();
-    reapplyAllTracked();
-    if (doc && doc.body) {
-      translateTree(doc.body);
+
+    // Clear stale async work and synchronously re-translate the live tree
+    pendingRoots.clear();
+    asyncWorkStack.length = 0;
+
+    const targetRoot = observedRoot || (doc && doc.body);
+    if (targetRoot) {
+      translateTree(targetRoot);
     }
 
     if (changed) {
@@ -554,28 +941,108 @@ export function createTranslator(bundle, options = {}) {
     return currentLocale;
   }
 
-  function scheduleFlush(onFlushCallback) {
-    if (scheduledFlush !== null) return;
-    const run = () => {
-      scheduledFlush = null;
-      const roots = Array.from(pendingRoots);
+  function enqueueDeduplicatedRoots() {
+    if (pendingRoots.size === 0) return;
+    const fallbackRoot = observedRoot || (doc && doc.body);
+
+    // Collapse massive burst (>500 pending roots) into a single incremental scan of the observed root
+    if (pendingRoots.size > 500 && fallbackRoot) {
       pendingRoots.clear();
-      for (const r of roots) {
-        translateTree(r);
+      asyncWorkStack.length = 0;
+      asyncWorkStack.push({ node: fallbackRoot, parentMode: null });
+      return;
+    }
+
+    const rawRoots = [];
+    for (const r of pendingRoots) {
+      if (isNodeConnected(r, fallbackRoot)) {
+        rawRoots.push(r);
       }
-      if (typeof onFlushCallback === 'function') {
-        onFlushCallback();
+    }
+    pendingRoots.clear();
+
+    // Prune redundant child roots whose ancestor is already queued
+    for (let i = 0; i < rawRoots.length; i++) {
+      const candidate = rawRoots[i];
+      let covered = false;
+      for (let j = 0; j < rawRoots.length; j++) {
+        if (i !== j && rawRoots[j].nodeType === 1 && nodeContains(rawRoots[j], candidate)) {
+          covered = true;
+          break;
+        }
       }
-    };
+      if (!covered) {
+        asyncWorkStack.push({ node: candidate, parentMode: null });
+      }
+    }
+  }
+
+  function runAsyncSlice() {
+    scheduledFlush = null;
+    enqueueDeduplicatedRoots();
+
+    if (asyncWorkStack.length === 0) {
+      if (typeof flushCallback === 'function') flushCallback();
+      return;
+    }
+
+    // Reset inherited parentMode on nodes carried over from a previous frame so
+    // any node moved or detached between frames is freshly re-validated.
+    for (let i = 0; i < asyncWorkStack.length; i++) {
+      asyncWorkStack[i].parentMode = null;
+    }
+
+    const fallbackRoot = observedRoot || (doc && doc.body);
+    const prevApplying = isApplying;
+    isApplying = true;
+    // Fresh transient WeakMap per frame slice — never persisted across frames or mutations
+    const modeCache = new WeakMap();
+    const startTime = getNow();
+    let visited = 0;
+
+    try {
+      while (asyncWorkStack.length > 0) {
+        const item = asyncWorkStack.pop();
+        if (!item || !item.node) continue;
+        // Re-check connectedness on top-level roots yielded across frames
+        if (item.parentMode === null && !isNodeConnected(item.node, fallbackRoot)) {
+          continue;
+        }
+        visitNode(item.node, item.parentMode, modeCache, asyncWorkStack);
+        visited++;
+
+        if (
+          visited >= ASYNC_SLICE_NODE_BUDGET ||
+          (visited % 32 === 0 && getNow() - startTime >= ASYNC_SLICE_TIME_BUDGET_MS)
+        ) {
+          break;
+        }
+      }
+    } finally {
+      if (!prevApplying) drainSelfMutations();
+      isApplying = prevApplying;
+    }
+
+    if (asyncWorkStack.length > 0 || pendingRoots.size > 0) {
+      scheduleFlush();
+    } else if (typeof flushCallback === 'function') {
+      flushCallback();
+    }
+  }
+
+  function scheduleFlush() {
+    if (scheduledFlush !== null) return;
     if (win && typeof win.requestAnimationFrame === 'function') {
-      scheduledFlush = win.requestAnimationFrame(run);
+      scheduledFlush = win.requestAnimationFrame(runAsyncSlice);
     } else {
-      scheduledFlush = setTimeout(run, 16);
+      scheduledFlush = setTimeout(runAsyncSlice, 16);
     }
   }
 
   function startObserver(root = doc && doc.body, onMutationFlush = null) {
     if (!root) return null;
+    observedRoot = root;
+    flushCallback = onMutationFlush;
     syncDocumentLang();
     translateTree(root);
 
@@ -589,10 +1056,13 @@ export function createTranslator(bundle, options = {}) {
     observer = new MO((mutations) => {
       if (isApplying) return;
       let dirty = false;
-      for (const m of mutations) {
+      for (let i = 0; i < mutations.length; i++) {
+        const m = mutations[i];
         if (m.type === 'childList') {
-          for (const added of m.addedNodes || []) {
-            if (added.nodeType === 1 && elementMatchesAnySelector(added, ['[data-ag-i18n-ui]'])) {
+          const addedNodes = m.addedNodes || [];
+          for (let j = 0; j < addedNodes.length; j++) {
+            const added = addedNodes[j];
+            if (added.nodeType === 1 && elementMatchesSelf(added, '[data-ag-i18n-ui]')) {
               continue;
             }
             pendingRoots.add(added);
@@ -601,16 +1071,18 @@ export function createTranslator(bundle, options = {}) {
         } else if (m.type === 'characterData') {
           const target = m.target;
           const parent = target && (target.parentElement || target.parentNode);
-          if (parent && !shouldSkipElement(parent)) {
+          if (parent && parent.nodeType === 1) {
             // Ignore our own translation writes so original English text is NEVER overwritten
             if (lastAppliedTextMap.has(target) && lastAppliedTextMap.get(target) === target.nodeValue) {
               continue;
             }
-            // Text changed legitimately by app state: refresh original source
-            originalTextMap.set(target, target.nodeValue);
-            trackedTextNodes.add(target);
-            pendingRoots.add(target);
-            dirty = true;
+            // Text changed legitimately by app state: refresh original source and drop any stale merged snapshot
+            originalTextMap.delete(target);
+            mergedParentOriginals.delete(parent);
+            if (!shouldSkipElement(parent)) {
+              pendingRoots.add(target);
+              dirty = true;
+            }
           }
         } else if (m.type === 'attributes' && TRANSLATABLE_ATTRS.includes(m.attributeName)) {
           const el = m.target;
@@ -620,14 +1092,12 @@ export function createTranslator(bundle, options = {}) {
             if (appliedMap && appliedMap.get(m.attributeName) === val) {
               continue;
             }
+            const cache = originalAttrMap.get(el);
+            if (cache) {
+              cache.delete(m.attributeName);
+              if (cache.size === 0) originalAttrMap.delete(el);
+            }
             if (typeof val === 'string') {
-              let cache = originalAttrMap.get(el);
-              if (!cache) {
-                cache = new Map();
-                originalAttrMap.set(el, cache);
-                trackedElements.add(el);
-              }
-              cache.set(m.attributeName, val);
               pendingRoots.add(el);
               dirty = true;
             }
@@ -635,7 +1105,7 @@ export function createTranslator(bundle, options = {}) {
         }
       }
       if (dirty) {
-        scheduleFlush(onMutationFlush);
+        scheduleFlush();
       }
     });
 
@@ -654,6 +1124,16 @@ export function createTranslator(bundle, options = {}) {
       observer.disconnect();
       observer = null;
     }
+    if (scheduledFlush !== null) {
+      if (win && typeof win.cancelAnimationFrame === 'function') {
+        win.cancelAnimationFrame(scheduledFlush);
+      } else {
+        clearTimeout(scheduledFlush);
+      }
+      scheduledFlush = null;
+    }
+    pendingRoots.clear();
+    asyncWorkStack.length = 0;
   }
 
   function subscribe(fn) {
@@ -677,18 +1157,23 @@ export function createTranslator(bundle, options = {}) {
   function collectUntranslated(root = doc && doc.body) {
     if (!root) return {};
     const found = {};
-    const stack = [root];
+    const modeCache = new WeakMap();
+    const stack = [{ node: root, parentMode: null }];
     const hasLatin = /[A-Za-z]{2,}/;
     const hasCjk = /[\u4e00-\u9fff]/;
     const ignoredBrands = new Set(['Antigravity', 'Google Antigravity', 'Gemini', 'Claude', 'GPT']);
 
     while (stack.length > 0) {
-      const node = stack.pop();
+      const item = stack.pop();
+      const node = item && item.node;
       if (!node) continue;
 
       if (node.nodeType === 3) {
         const parent = node.parentElement || node.parentNode;
-        if (!parent || shouldSkipElement(parent)) continue;
+        if (!parent || parent.nodeType !== 1) continue;
+        const mode = item.parentMode !== null ? item.parentMode : resolveElementMode(parent, modeCache);
+        if (mode !== MODE_TRANSLATE) continue;
+
         const raw = originalTextMap.get(node) || node.nodeValue || '';
         const core = normalizeWhitespace(raw);
         if (
@@ -703,7 +1188,7 @@ export function createTranslator(bundle, options = {}) {
         ) {
           continue;
         }
-        const translated = translateString(core, currentLocale);
+        const translated = translateString(core, currentLocale, parent);
         if (translated === core && !Object.prototype.hasOwnProperty.call(found, core)) {
           found[core] = '';
         }
@@ -711,14 +1196,26 @@ export function createTranslator(bundle, options = {}) {
       }
 
       if (node.nodeType === 1) {
-        if (shouldSkipElement(node)) continue;
-        if (node.shadowRoot) stack.push(node.shadowRoot);
+        const elMode =
+          item.parentMode !== null
+            ? classifyElementFromParent(node, item.parentMode)
+            : resolveElementMode(node, modeCache);
+        modeCache.set(node, elMode);
+        if (elMode === MODE_HARD_SKIP || elMode === MODE_PROTECTED_STRICT) continue;
+        if (node.shadowRoot) stack.push({ node: node.shadowRoot, parentMode: elMode });
+        const children = node.childNodes;
+        if (children && children.length) {
+          for (let i = children.length - 1; i >= 0; i--) {
+            stack.push({ node: children[i], parentMode: elMode });
+          }
+        }
+        continue;
       }
 
       const children = node.childNodes;
       if (children && children.length) {
         for (let i = children.length - 1; i >= 0; i--) {
-          stack.push(children[i]);
+          stack.push({ node: children[i], parentMode: item.parentMode });
         }
       }
     }

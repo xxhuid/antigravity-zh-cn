@@ -2,6 +2,34 @@
 
 本项目版本号采用独立语义化版本（SemVer），不与 Antigravity 官方版本号强绑定；每个版本均标注已实测适配的 Antigravity 客户端版本。
 
+## [0.3.0] - 2026-11-25
+
+> **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11 实机验收通过，兼容 `2.35.x+`）
+
+### 核心引擎重构与安全加固
+
+- **三层用户内容与自定义扩展边界隔离**：
+  - 严格保护用户消息气泡、AI 回复 Markdown 正文、行内文件引用、项目/会话标题及技能插件作者内容，避免正文中的 `Settings`、`New Conversation` 等高频词被误翻；
+  - 针对文件树（`role="tree/treeitem"`）、侧边栏会话行（`conversation-row-sidebar`）等混合容器，保留条目名称原文的同时继续翻译同一行内的显式操作按钮（如删除/置顶/归档）；
+  - 支持节点重挂自动还原：当 React 将已翻译节点移入受保护正文区时，自动恢复英文原文与属性。
+- **彻底消除长会话内存泄漏**：移除强引用追踪 `Set`，改为纯 `WeakMap` 节点跟踪且仅记录实际发生改写的节点，脱离文档的 DOM 节点可立即被 GC 回收。
+- **大页面性能与防掉帧优化**：
+  - 每次扫描片段内使用临时 `WeakMap` 向下传递模式判定（`O(1)` 每节点，避免深层祖先链重复 `closest()` 暴搜）；
+  - 异步 `MutationObserver` 刷新引入每帧 **200 节点 / 6 ms 软预算**分帧续扫，不丢尾部节点且跨帧自动重新校验节点连通性与保护边界；
+  - 新增 4,000 条翻译结果缓存、非 ASCII 快速短路及重叠父子根去重。
+- **修复聊天正文误插「界面语言」卡片**：强化 `engine/language-ui.js` 设置页锚点扫描，直接跳过 `<code>`/`<pre>`/列表/聊天与 Markdown 容器，并为兜底锚点增加设置页上下文校验及离页清理。
+- **作用域词典 & 标点/快捷键通用保留**：支持模块级 `scoped` 作用域词典（避免短词全局污染），新增末尾标点剥离（如 `Settings:` → `设置：`）与快捷键后缀保留（兼容 Windows/Linux `Ctrl+Alt+A` 及 macOS `⌥⇧P`）。
+
+### 词库扩展与跨平台增强
+
+- **词库扩展至 593 条 UI 词条 + 51 条动态正则**：
+  - 补齐侧边栏对话悬浮提示、右键菜单与「复制 > / 分屏 >」子菜单（`Archive Conversation`、`Pin`、`Mark Unread`、`Split`、`Conversation Name / Conversation ID / Project Name` 等）；
+  - 新增 `Updated ...`（`更新于 ...`）、`Worked for ...`（`已工作 ...`）、`Thought for ...`（`已思考 ...`）等动态状态正则。
+- **Linux 便携探测与 CDP 目标隔离**：
+  - 自动探测 `~/Applications/Portable`、`~/Applications` 及仓库同级目录的 Linux 便携解压包（`Antigravity-x64` / `Antigravity-arm64`），严格校验 `isFile()`；
+  - CDP 启动器自动过滤 `devtools://`、`chrome-extension://` 及外部 `http(s)://` 第三方网页，避免误注入内置浏览器页面；
+  - 补充 macOS Apple Silicon 静态重签与自动更新校验说明。
+
 ## [0.2.2] - 2026-11-24
 
 > **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11 静态补丁 & macOS CDP 启动器双平台验证，兼容 `2.35.x+`）

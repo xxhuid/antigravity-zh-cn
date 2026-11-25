@@ -8,6 +8,7 @@ import { mountLanguageUI } from '../engine/language-ui.js';
 import {
   buildMainMenuHookSnippet,
   buildRendererPreloadSnippet,
+  detectAsarPath,
   findAsarPatchTargets,
   injectIntoSource,
   MARKER_END,
@@ -15,6 +16,7 @@ import {
   resolveBackupAction,
   stripInjectedBlocks,
 } from '../patcher/patch.mjs';
+import { isInjectableCdpTarget } from '../launcher/launch.mjs';
 import {
   buildAsarFromMap,
   getAsarEntry,
@@ -582,4 +584,315 @@ test('static ASAR codec preserves unpacked entries and applies idempotent patche
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test('user content & customization boundaries protect user text while allowing mixed-row action buttons and restoring reparented nodes', () => {
+  const { bundle } = loadAndValidateLocales(ROOT_DIR);
+  const { win, doc, storage } = createMockEnv();
+
+  // 1. Strict protected: Markdown / AI response body (even nested buttons stay untouched)
+  const markdownRoot = doc.createElement('div');
+  markdownRoot.setAttribute('data-markdown-root', 'true');
+  const mdPara = doc.createElement('p');
+  mdPara.textContent = 'Settings';
+  const mdBtn = doc.createElement('button');
+  mdBtn.textContent = 'Settings';
+  markdownRoot.appendChild(mdPara);
+  markdownRoot.appendChild(mdBtn);
+
+  // 2. Mixed protected: file tree item (file name & data-uri button stay protected; Delete button translates)
+  const treeItem = doc.createElement('div');
+  treeItem.setAttribute('role', 'treeitem');
+  const fileLabel = doc.createElement('span');
+  fileLabel.textContent = 'Settings';
+  const fileUriBtn = doc.createElement('button');
+  fileUriBtn.setAttribute('data-uri', 'file:///workspace/Settings');
+  fileUriBtn.textContent = 'Settings';
+  const treeDeleteBtn = doc.createElement('button');
+  treeDeleteBtn.setAttribute('aria-label', 'Delete');
+  treeDeleteBtn.textContent = 'Delete';
+  treeItem.appendChild(fileLabel);
+  treeItem.appendChild(fileUriBtn);
+  treeItem.appendChild(treeDeleteBtn);
+
+  // 3. Mixed protected: sidebar conversation row (title link stays protected; action button translates)
+  const convoRow = doc.createElement('div');
+  convoRow.setAttribute('data-testid', 'conversation-row-sidebar');
+  const convoLink = doc.createElement('a');
+  convoLink.textContent = 'New Conversation';
+  const convoAction = doc.createElement('button');
+  convoAction.setAttribute('title', 'Delete');
+  convoAction.textContent = 'Delete';
+  convoRow.appendChild(convoLink);
+  convoRow.appendChild(convoAction);
+
+  // 4. Customization author name / description stays untouched
+  const customName = doc.createElement('div');
+  customName.setAttribute('data-testid', 'customization-name');
+  customName.textContent = 'Automations';
+
+  // 5. Normal UI node that will later be reparented into protected Markdown
+  const movableSpan = doc.createElement('span');
+  movableSpan.textContent = 'Settings';
+
+  for (const el of [markdownRoot, treeItem, convoRow, customName, movableSpan]) {
+    doc.body.appendChild(el);
+  }
+
+  const translator = createTranslator(bundle, { window: win, document: doc, storage });
+  translator.translateTree(doc.body);
+
+  assert.equal(mdPara.textContent, 'Settings');
+  assert.equal(mdBtn.textContent, 'Settings');
+  assert.equal(fileLabel.textContent, 'Settings');
+  assert.equal(fileUriBtn.textContent, 'Settings');
+  assert.equal(treeDeleteBtn.textContent, '删除');
+  assert.equal(treeDeleteBtn.getAttribute('aria-label'), '删除');
+  assert.equal(convoLink.textContent, 'New Conversation');
+  assert.equal(convoAction.textContent, '删除');
+  assert.equal(convoAction.getAttribute('title'), '删除');
+  assert.equal(customName.textContent, 'Automations');
+  assert.equal(movableSpan.textContent, '设置');
+
+  // Reparent translated node into protected Markdown -> must restore original English text
+  markdownRoot.appendChild(movableSpan);
+  translator.translateTree(markdownRoot);
+  assert.equal(movableSpan.textContent, 'Settings');
+});
+
+test('frame-budgeted async mutation flush translates 650 added sibling nodes across multiple frames without dropping tail nodes', () => {
+  const { bundle } = loadAndValidateLocales(ROOT_DIR);
+  const { win, doc, storage } = createMockEnv();
+
+  const rafQueue = [];
+  win.requestAnimationFrame = (cb) => {
+    rafQueue.push(cb);
+    return rafQueue.length;
+  };
+  win.cancelAnimationFrame = () => {};
+
+  let observerCb = null;
+  class ControlledMutationObserver {
+    constructor(cb) {
+      observerCb = cb;
+    }
+    observe() {}
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+
+  const translator = createTranslator(bundle, {
+    window: win,
+    document: doc,
+    storage,
+    MutationObserver: ControlledMutationObserver,
+  });
+  translator.startObserver(doc.body);
+
+  const container = doc.createElement('div');
+  doc.body.appendChild(container);
+  const nodes = [];
+  for (let i = 0; i < 650; i++) {
+    const span = doc.createElement('span');
+    span.textContent = 'Settings';
+    container.appendChild(span);
+    nodes.push(span);
+  }
+
+  observerCb([{ type: 'childList', addedNodes: [container] }]);
+
+  // Run first frame slice only, then move an unvisited tail node into a protected Markdown container
+  // before resuming subsequent frames to verify cross-frame boundary re-evaluation!
+  assert.ok(rafQueue.length > 0);
+  let frameCount = 1;
+  rafQueue.shift()();
+
+  const mdShield = doc.createElement('div');
+  mdShield.setAttribute('data-markdown-root', 'true');
+  doc.body.appendChild(mdShield);
+  const movedTailNode = nodes[640];
+  mdShield.appendChild(movedTailNode);
+
+  while (rafQueue.length > 0 && frameCount < 20) {
+    const cb = rafQueue.shift();
+    frameCount++;
+    cb();
+  }
+
+  assert.ok(frameCount >= 3, `Expected 650 nodes to be time-sliced across >=3 frames, got ${frameCount}`);
+  assert.equal(nodes[0].textContent, '设置');
+  assert.equal(nodes[500].textContent, '设置');
+  assert.equal(movedTailNode.textContent, 'Settings', 'Node moved into protected zone between frames must NOT be translated');
+  assert.equal(nodes[649].textContent, '设置');
+  translator.stopObserver();
+});
+
+test('scoped dictionaries, punctuation stripping, and hotkey suffix preservation work without global pollution', () => {
+  const { win, doc, storage } = createMockEnv();
+  const customBundle = {
+    defaultLocale: 'zh-CN',
+    locales: [
+      { code: 'en', builtin: true, exact: {}, patterns: [], scoped: [] },
+      {
+        code: 'zh-CN',
+        name: 'Simplified Chinese',
+        nativeName: '简体中文',
+        exact: {
+          Settings: '设置',
+          'Command Palette': '命令面板',
+        },
+        patterns: [],
+        scoped: [
+          {
+            selector: '[data-testid="swarm-panel"]',
+            exact: {
+              Live: '实时',
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const globalLive = doc.createElement('span');
+  globalLive.textContent = 'Live';
+  const swarmPanel = doc.createElement('div');
+  swarmPanel.setAttribute('data-testid', 'swarm-panel');
+  const swarmLive = doc.createElement('span');
+  swarmLive.textContent = 'Live';
+  swarmPanel.appendChild(swarmLive);
+
+  const puncEl = doc.createElement('span');
+  puncEl.textContent = 'Settings:';
+  const hotkeyEl = doc.createElement('span');
+  hotkeyEl.textContent = 'Command Palette (Ctrl+Shift+P)';
+
+  for (const el of [globalLive, swarmPanel, puncEl, hotkeyEl]) {
+    doc.body.appendChild(el);
+  }
+
+  const translator = createTranslator(customBundle, { window: win, document: doc, storage });
+  translator.translateTree(doc.body);
+
+  assert.equal(globalLive.textContent, 'Live', 'Scoped word must NOT pollute outside its scope');
+  assert.equal(swarmLive.textContent, '实时', 'Scoped word must translate inside matching container');
+  assert.equal(puncEl.textContent, '设置：');
+  assert.equal(hotkeyEl.textContent, '命令面板 (Ctrl+Shift+P)');
+
+  // Verify real zh-CN sidebar context menu, tooltip hotkeys, and Updated/Worked/Thought patterns
+  const { bundle: realBundle } = loadAndValidateLocales(ROOT_DIR);
+  const realTranslator = createTranslator(realBundle, { window: win, document: doc, storage });
+  assert.equal(realTranslator.translateString('Archive Conversation Ctrl+Alt+A'), '归档对话 Ctrl+Alt+A');
+  assert.equal(realTranslator.translateString('Pin Alt+Shift+P'), '置顶 Alt+Shift+P');
+  assert.equal(realTranslator.translateString('Pin ⌥⇧P'), '置顶 ⌥⇧P');
+  assert.equal(realTranslator.translateString('Mark Unread'), '标为未读');
+  assert.equal(realTranslator.translateString('Split'), '分屏');
+  assert.equal(realTranslator.translateString('Archive'), '归档');
+  assert.equal(realTranslator.translateString('Updated 1:46'), '更新于 1:46');
+  assert.equal(realTranslator.translateString('Worked for 1m'), '已工作 1 分钟');
+  assert.equal(realTranslator.translateString('Thought for 12s'), '已思考 12 秒');
+
+  translator.setLocale('en');
+  assert.equal(swarmLive.textContent, 'Live');
+  assert.equal(puncEl.textContent, 'Settings:');
+  assert.equal(hotkeyEl.textContent, 'Command Palette (Ctrl+Shift+P)');
+});
+
+test('Linux portable ASAR detection requires a real file and CDP target filter blocks external/DevTools pages', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-i18n-linux-'));
+  try {
+    // Create a decoy directory named app.asar under ~/Applications/Portable/Antigravity/resources/app.asar
+    const decoyDir = path.join(tmp, 'Applications', 'Portable', 'Antigravity', 'resources', 'app.asar');
+    fs.mkdirSync(decoyDir, { recursive: true });
+
+    // Create a real file under ~/Applications/Portable/Antigravity-x64/resources/app.asar
+    const realFile = path.join(tmp, 'Applications', 'Portable', 'Antigravity-x64', 'resources', 'app.asar');
+    fs.mkdirSync(path.dirname(realFile), { recursive: true });
+    fs.writeFileSync(realFile, 'mock-asar');
+
+    const detected = detectAsarPath('linux', { homeDir: tmp, rootDir: path.join(tmp, 'repo'), arch: 'x64' });
+    assert.equal(detected, realFile);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Verify CDP target filter
+  assert.equal(
+    isInjectableCdpTarget({ type: 'page', url: 'file:///app/index.html', webSocketDebuggerUrl: 'ws://1' }),
+    true,
+  );
+  assert.equal(
+    isInjectableCdpTarget({ type: 'page', url: 'http://127.0.0.1:41234/', webSocketDebuggerUrl: 'ws://1' }),
+    true,
+  );
+  assert.equal(
+    isInjectableCdpTarget({ type: 'page', url: 'devtools://devtools/bundled/inspector.html', webSocketDebuggerUrl: 'ws://1' }),
+    false,
+  );
+  assert.equal(
+    isInjectableCdpTarget({ type: 'webview', url: 'https://github.com/login', webSocketDebuggerUrl: 'ws://1' }),
+    false,
+  );
+});
+
+test('mountLanguageUI NEVER injects Language card into chat messages, Markdown, or inline <code> containing anchor text', () => {
+  const { bundle } = loadAndValidateLocales(ROOT_DIR);
+  const { win, doc, storage } = createMockEnv();
+
+  // Case 1: Inline <code>Interface Layout</code> inside a chat Markdown list item (exact live bug)
+  const mdRoot = doc.createElement('div');
+  mdRoot.setAttribute('data-markdown-root', 'true');
+  const ul = doc.createElement('ul');
+  const li = doc.createElement('li');
+  const code = doc.createElement('code');
+  code.textContent = 'Interface Layout';
+  li.appendChild(code);
+  ul.appendChild(li);
+
+  // Case 2: Exact primary subtitle quoted inside AI response text
+  const aiResp = doc.createElement('div');
+  aiResp.setAttribute('data-testid', 'planner-response-text');
+  const quotedSubtitle = doc.createElement('div');
+  quotedSubtitle.textContent =
+    'Configure agent execution, queued message delivery, and permissions.';
+  aiResp.appendChild(quotedSubtitle);
+
+  // Case 3: Stray <div>Interface Layout</div> outside any Settings context
+  const strayDiv = doc.createElement('div');
+  strayDiv.textContent = 'Interface Layout';
+
+  mdRoot.appendChild(ul);
+  doc.body.appendChild(mdRoot);
+  doc.body.appendChild(aiResp);
+  doc.body.appendChild(strayDiv);
+
+  const translator = createTranslator(bundle, { window: win, document: doc, storage });
+  translator.translateTree(doc.body);
+  const ui = mountLanguageUI(translator, { window: win, document: doc, storage });
+
+  assert.equal(
+    doc.querySelector('[data-ag-i18n-ui="settings-section"]'),
+    null,
+    'Language settings card must NOT be injected into chat/Markdown/code or non-Settings containers',
+  );
+
+  // Now open a genuine Settings -> General pane (fallback-only, without subtitle) -> MUST inject there
+  const settingsPane = doc.createElement('div');
+  const generalTitle = doc.createElement('div');
+  generalTitle.textContent = 'General';
+  const layoutHeading = doc.createElement('div');
+  layoutHeading.textContent = 'Interface Layout';
+  settingsPane.appendChild(generalTitle);
+  settingsPane.appendChild(layoutHeading);
+  doc.body.appendChild(settingsPane);
+
+  translator.translateTree(settingsPane);
+  ui.injectIntoSettings();
+
+  const injected = doc.querySelector('[data-ag-i18n-ui="settings-section"]');
+  assert.ok(injected, 'Language settings card should still inject into a real Settings -> General pane');
+  assert.equal(injected.parentNode, settingsPane);
+  ui.destroy();
 });

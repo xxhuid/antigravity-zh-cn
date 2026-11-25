@@ -38,10 +38,35 @@ export function parseArgs(argv) {
   return args;
 }
 
-export function detectAntigravityExecutable(platform = process.platform) {
+function isExistingFile(filePath) {
+  try {
+    return Boolean(filePath) && fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function isInjectableCdpTarget(target) {
+  if (!target || !target.webSocketDebuggerUrl) return false;
+  if (target.type !== 'page' && target.type !== 'webview') return false;
+  const url = String(target.url || '').trim();
+  if (!url || url === 'about:blank') return true;
+  // Never inject into DevTools, browser extensions, or external third-party web pages
+  if (/^(devtools|chrome|chrome-extension|edge):\/\//i.test(url)) return false;
+  if (/^https?:\/\//i.test(url)) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url);
+  }
+  return true;
+}
+
+export function detectAntigravityExecutable(platform = process.platform, options = {}) {
   const candidates = [];
+  const homeDir = options.homeDir || os.homedir();
+  const repoDir = options.rootDir || ROOT_DIR;
+  const arch = options.arch || process.arch;
+
   if (platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const localAppData = process.env.LOCALAPPDATA || path.join(homeDir, 'AppData', 'Local');
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
     candidates.push(
       path.join(localAppData, 'Programs', 'Antigravity', 'Antigravity.exe'),
@@ -73,17 +98,35 @@ export function detectAntigravityExecutable(platform = process.platform) {
   } else if (platform === 'darwin') {
     candidates.push(
       '/Applications/Antigravity.app/Contents/MacOS/Antigravity',
-      path.join(os.homedir(), 'Applications', 'Antigravity.app', 'Contents', 'MacOS', 'Antigravity'),
+      path.join(homeDir, 'Applications', 'Antigravity.app', 'Contents', 'MacOS', 'Antigravity'),
     );
   } else {
     candidates.push(
       '/usr/bin/antigravity',
       '/usr/local/bin/antigravity',
       '/opt/Antigravity/antigravity',
-      path.join(os.homedir(), '.local', 'bin', 'antigravity'),
+      path.join(homeDir, '.local', 'bin', 'antigravity'),
     );
+    const portableParents = [
+      path.join(homeDir, 'Applications', 'Portable'),
+      path.join(homeDir, 'Applications'),
+      path.resolve(repoDir, '..'),
+    ];
+    const dirNames = ['Antigravity', 'antigravity', `Antigravity-${arch}`, 'Antigravity-x64', 'Antigravity-arm64'];
+    const seen = new Set();
+    for (const parent of portableParents) {
+      for (const name of dirNames) {
+        for (const binName of ['antigravity', 'Antigravity']) {
+          const candidate = path.join(parent, name, binName);
+          if (!seen.has(candidate)) {
+            seen.add(candidate);
+            candidates.push(candidate);
+          }
+        }
+      }
+    }
   }
-  return candidates.find((p) => fs.existsSync(p)) || '';
+  return candidates.find((p) => isExistingFile(p)) || '';
 }
 
 function fetchJson(url) {
@@ -277,8 +320,7 @@ async function main() {
     try {
       const targets = await fetchJson(`http://127.0.0.1:${args.port}/json/list`);
       for (const target of targets) {
-        if (!target.webSocketDebuggerUrl) continue;
-        if (target.type !== 'page' && target.type !== 'webview') continue;
+        if (!isInjectableCdpTarget(target)) continue;
         if (injectedTargets.has(target.id)) continue;
 
         try {
@@ -298,7 +340,7 @@ async function main() {
   };
 
   await pollAndInject();
-  console.log('[i18n] 多语言引擎运行中！可在 Antigravity 设置页或按 Ctrl+Shift+L 切换界面语言。');
+  console.log('[i18n] 多语言引擎运行中！可在 Antigravity 设置页或按 Ctrl+Alt+L（macOS 为 ⌘+⌥+L）切换界面语言。');
 
   const timer = setInterval(pollAndInject, 2500);
   process.on('SIGINT', () => {

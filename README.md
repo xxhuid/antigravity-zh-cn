@@ -137,8 +137,8 @@ git pull
 | 平台 | 当前状态 | 推荐方式与说明 |
 | :--- | :--- | :--- |
 | **Windows** | 已实机验证 | **静态补丁**与 **CDP 启动器**均可用；若 Antigravity 安装在 `C:\Program Files`，执行静态补丁时请使用管理员 PowerShell |
-| **macOS** | 方式一（CDP）已实机验证 | **推荐使用方式一（`./launcher/start-unix.sh`）**；方式二（静态补丁）修改 `/Applications/Antigravity.app` 内 `app.asar` 会使官方签名失效（通常需额外执行 `codesign --force --deep --sign - /Applications/Antigravity.app`） |
-| **Linux** | 代码已适配，待社区实测 | `.deb/.rpm` 安装通常在 `/opt/` 或 `/usr/lib/`（静态补丁可能需要 `sudo`）；只读挂载的 **AppImage** 请直接使用方式一（`./launcher/start-unix.sh --app <AppImage路径>`） |
+| **macOS** | 方式一（CDP）已实机验证 | **强烈推荐使用方式一（`./launcher/start-unix.sh`）**；方式二（静态补丁）修改 `app.asar` 并做临时重签（`codesign --force --deep --sign -`）会破坏官方签名，在 Apple Silicon 上可能导致官方自动更新安装时签名校验失败（仅还原 `app.asar` 无法恢复整包签名，需重装官方 DMG） |
+| **Linux** | 代码已适配，待社区实测 | 支持自动探测 `/opt/`、`/usr/lib/` 及 `~/Applications/Portable`、`~/Applications`、同级目录的便携解压包（`Antigravity-x64` / `Antigravity-arm64`）；只读挂载的 **AppImage** 请直接使用方式一（`./launcher/start-unix.sh --app <AppImage路径>`） |
 
 ### Antigravity 版本对应关系
 
@@ -146,6 +146,7 @@ git pull
 
 | 本项目版本 | 已实测 Antigravity 版本 | 兼容范围与说明 |
 | :--- | :--- | :--- |
+| **`v0.3.0`** | `2.35.1`（Windows / macOS） | 593 条 UI 词条 + 51 条动态正则；重构核心引擎（用户内容/混合容器隔离、纯 WeakMap 防泄漏、rAF 分帧防掉帧、作用域词典与快捷键保留）、修复聊天区误插设置卡片、强化 Linux 便携探测与 CDP 目标过滤 |
 | **`v0.2.2`** | `2.35.1`（Windows / macOS） | 546 条 UI 词条 + 42 条动态正则，补全「账号」页、Plus/Starter 套餐说明与长句正则，确认 macOS CDP 实机可用 |
 | **`v0.2.1`** | `2.35.1`（Windows） | 531 条 UI 词条 + 41 条动态正则，补全权限/模型/用量/上下文菜单，修复 `New` 徽标语境与多词大小写匹配 |
 | **`v0.2.0`** | `2.35.1`（Windows） | 492 条 UI 词条 + 33 条动态正则，通常兼容 `2.35.x+` 小版本更新 |
