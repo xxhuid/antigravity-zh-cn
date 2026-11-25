@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate locales, run tests, and build bundle
+        run: |
+          npm run validate:locales
+          npm test
+          npm run build
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const ver = process.env.TAG_NAME.replace(/^v/, "");
+            let notes = "";
+            if (fs.existsSync("CHANGELOG.md")) {
+              const lines = fs.readFileSync("CHANGELOG.md", "utf8").split(/\r?\n/);
+              const startIdx = lines.findIndex((l) => l.startsWith(`## [${ver}]`));
+              if (startIdx >= 0) {
+                const body = [];
+                for (let i = startIdx + 1; i < lines.length; i++) {
+                  if (lines[i].startsWith("## [")) break;
+                  body.push(lines[i]);
+                }
+                notes = body.join("\n").trim();
+              }
+            }
+            if (notes) {
+              fs.writeFileSync("release-notes.md", notes + "\n", "utf8");
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "has_notes=true\n");
+            } else {
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, "has_notes=false\n");
+            }
+          '
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "${{ steps.notes.outputs.has_notes }}" = "true" ]; then
+            gh release create "$TAG_NAME" \
+              dist/i18n-runtime.js \
+              dist/menu-locales.json \
+              --title "$TAG_NAME" \
+              --notes-file release-notes.md
+          else
+            gh release create "$TAG_NAME" \
+              dist/i18n-runtime.js \
+              dist/menu-locales.json \
+              --title "$TAG_NAME" \
+              --generate-notes
+          fi
