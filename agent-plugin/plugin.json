@@ -1,0 +1,18 @@
+{
+  "name": "antigravity-zh-cn",
+  "displayName": "简体中文工作流增强 (Chinese Pack)",
+  "version": "0.1.0",
+  "description": "让 Antigravity 默认使用简体中文进行对话、实施计划、任务清单、代码审查与 Git 提交（Simplified Chinese workflow pack with rules and skills）.",
+  "author": {
+    "name": "xxhuid",
+    "url": "https://github.com/xxhuid"
+  },
+  "homepage": "https://github.com/xxhuid/antigravity-zh-cn",
+  "repository": "https://github.com/xxhuid/antigravity-zh-cn",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "用简体中文审查当前工作区的代码变更并给出改进建议",
+    "根据当前 git diff 生成符合规范的中文 Commit 提交信息",
+    "用简体中文梳理这个项目的整体架构和关键模块"
+  ]
+}

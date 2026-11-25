@@ -1,0 +1,30 @@
+{
+  "code": "zh-CN",
+  "name": "Simplified Chinese",
+  "nativeName": "简体中文",
+  "direction": "ltr",
+  "author": "xxhuid",
+  "version": "0.2.0",
+  "ui": {
+    "sectionTitle": "界面语言",
+    "settingLabel": "显示语言 (Language)",
+    "settingDescription": "选择 Antigravity 桌面客户端界面的显示语言，切换后立即生效。",
+    "modalTitle": "选择界面语言",
+    "modalSubtitle": "支持即时切换，无需重启客户端；快捷键 Ctrl+Alt+L（macOS 为 ⌘+⌥+L）。",
+    "toggleFloatingLabel": "显示右下角快速切换按钮",
+    "floatingHint": "隐藏后仍可按 Ctrl+Alt+L（macOS 为 ⌘+⌥+L）或在此设置中重新开启。",
+    "scanUntranslatedLabel": "复制当前页未翻译词条 (JSON)",
+    "scanCopiedPrefix": "已复制未翻译词条",
+    "scanNoneLabel": "当前页面已全部翻译！",
+    "closeButton": "关闭",
+    "badgeLabel": "中",
+    "badgeTooltip": "切换 Antigravity 界面语言 (Ctrl+Alt+L)"
+  },
+  "modules": [
+    "sidebar.json",
+    "settings.json",
+    "chat.json",
+    "menu.json",
+    "common.json"
+  ]
+}

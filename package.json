@@ -1,0 +1,31 @@
+{
+  "name": "antigravity-zh-cn",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Multi-language UI localization framework (Simplified Chinese + extensible language packs) and Agent Chinese workflow plugin for Google Antigravity 2.0.",
+  "author": {
+    "name": "xxhuid",
+    "url": "https://github.com/xxhuid"
+  },
+  "homepage": "https://github.com/xxhuid/antigravity-zh-cn",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xxhuid/antigravity-zh-cn.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "node scripts/build-bundle.mjs",
+    "validate:locales": "node scripts/build-bundle.mjs --validate-only",
+    "launch": "node launcher/launch.mjs",
+    "patch:status": "node patcher/patch.mjs --status",
+    "patch:dry-run": "node patcher/patch.mjs --apply --dry-run",
+    "patch:apply": "node patcher/patch.mjs --apply",
+    "patch:restore": "node patcher/patch.mjs --restore",
+    "install:agent-plugin": "node scripts/install-agent-plugin.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "exact": {
+    "Send": "发送",
+    "Stop": "停止",
+    "Stop Generating": "停止生成",
+    "Regenerate": "重新生成",
+    "Attach File": "添加附件",
+    "Upload Image": "上传图片",
+    "Slash Commands": "斜杠命令",
+    "Mention": "引用上下文",
+    "Subagents": "子代理",
+    "Background Tasks": "后台任务",
+    "Artifacts": "产物文档",
+    "Files Changed": "变更文件",
+    "Terminals": "终端",
+    "Terminal": "终端",
+    "Overview": "概览",
+    "Timeline": "时间线",
+    "Swarm": "多代理协作 (Swarm)",
+    "Planning": "规划中",
+    "Thinking": "思考中",
+    "Thinking...": "正在思考...",
+    "Working": "执行中",
+    "Working...": "正在执行...",
+    "Waiting": "等待中",
+    "Completed": "已完成",
+    "Failed": "执行失败",
+    "Cancelled": "已取消",
+    "Running": "运行中",
+    "Queued": "排队中",
+    "Implementation Plan": "实施计划",
+    "Task List": "任务清单",
+    "Walkthrough": "变更说明",
+    "Review": "审查",
+    "Proceed": "继续执行",
+    "Approve": "批准",
+    "Always Allow": "始终允许",
+    "Reject": "拒绝",
+    "Allow Once": "仅允许本次",
+    "Allow for Session": "本次会话允许",
+    "Review Changes": "审查变更",
+    "Accept All": "全部接受",
+    "Reject All": "全部拒绝",
+    "Copy Code": "复制代码",
+    "Copied!": "已复制！",
+    "Show more": "展开更多",
+    "Show less": "收起",
+    "Ask anything...": "输入你的问题或任务...",
+    "Ask anything, @ to mention, / for actions": "随便问点什么，输入 @ 引用上下文，输入 / 调用操作",
+    "Type a message...": "输入消息...",
+    "Message Antigravity...": "给 Antigravity 发消息...",
+    "This Computer": "本机",
+    "Runs on this machine": "在当前电脑上运行",
+    "SSH Host": "SSH 远程主机",
+    "New Project": "新建项目",
+    "No Project": "不选择项目",
+    "Local Checkout": "本地检出",
+    "New Worktree": "新建工作树 (Worktree)",
+    "Worktrees are available for Git repositories": "仅 Git 仓库支持工作树 (Worktree)",
+    "No Model Selected": "未选择模型",
+    "Create with Prompt": "通过提示词创建",
+    "No automations yet": "暂无自动化任务",
+    "Run a prompt on a schedule, like a morning summary of yesterday's changes. Runs show up here.": "按计划定时运行提示词（例如每天早晨汇总昨天的代码变更），运行记录会显示在这里。",
+    "Untitled": "未命名任务",
+    "Uses your local files and tools. Schedules only.": "使用你的本地文件与工具，仅支持定时调度。",
+    "Trigger": "触发条件",
+    "Scheduled": "定时触发",
+    "Every hour": "每小时",
+    "Every day": "每天",
+    "Every weekday": "每个工作日",
+    "Every week": "每周",
+    "Every month": "每月",
+    "Custom cron": "自定义 Cron",
+    "Manual": "手动触发",
+    "at": "于",
+    "Instructions": "执行指令",
+    "What should the agent do on each run? For example: summarize new bugs assigned to me and anything that changed overnight.": "Agent 每次运行时需要做什么？例如：汇总分配给我的新 Bug 以及昨晚的代码变更。",
+    "No conversations yet": "暂无对话记录",
+    "No plugins installed": "暂未安装插件",
+    "No skills yet": "暂无技能",
+    "No rules yet": "暂无规则",
+    "Build me a web app": "帮我构建一个 Web 应用",
+    "Add a Gemini feature to my app": "为我的应用添加 Gemini 功能",
+    "Bring over my setup from other Agentic Developer Tools": "从其他 AI 编程工具迁移我的配置",
+    "Minimal": "极简",
+    "Low": "低",
+    "Medium": "中",
+    "High": "高",
+    "Extra High": "极高",
+    "now": "刚刚",
+    "just now": "刚刚"
+  },
+  "patterns": [
+    {
+      "regex": "^(\\d+)\\s+files?\\s+changed$",
+      "flags": "i",
+      "replace": "$1 个文件已变更"
+    },
+    {
+      "regex": "^(\\d+)\\s+seconds?\\s+ago$",
+      "flags": "i",
+      "replace": "$1 秒前"
+    },
+    {
+      "regex": "^(\\d+)\\s+minutes?\\s+ago$",
+      "flags": "i",
+      "replace": "$1 分钟前"
+    },
+    {
+      "regex": "^(\\d+)\\s+hours?\\s+ago$",
+      "flags": "i",
+      "replace": "$1 小时前"
+    },
+    {
+      "regex": "^(\\d+)\\s+days?\\s+ago$",
+      "flags": "i",
+      "replace": "$1 天前"
+    },
+    {
+      "regex": "^(\\d+)s\\s+ago$",
+      "flags": "i",
+      "replace": "$1 秒前"
+    },
+    {
+      "regex": "^(\\d+)m\\s+ago$",
+      "flags": "i",
+      "replace": "$1 分钟前"
+    },
+    {
+      "regex": "^(\\d+)h\\s+ago$",
+      "flags": "i",
+      "replace": "$1 小时前"
+    },
+    {
+      "regex": "^(\\d+)d\\s+ago$",
+      "flags": "i",
+      "replace": "$1 天前"
+    },
+    {
+      "regex": "^(\\d+)m$",
+      "flags": "",
+      "replace": "$1分钟"
+    },
+    {
+      "regex": "^(\\d+)h$",
+      "flags": "",
+      "replace": "$1小时"
+    },
+    {
+      "regex": "^(\\d+)d$",
+      "flags": "",
+      "replace": "$1天"
+    },
+    {
+      "regex": "^(\\d+)\\s+tasks?\\s+running$",
+      "flags": "i",
+      "replace": "$1 个任务运行中"
+    },
+    {
+      "regex": "^(\\d+)\\s+of\\s+(\\d+)\\s+completed$",
+      "flags": "i",
+      "replace": "已完成 $1 / $2"
+    },
+    {
+      "regex": "^Good to see you,\\s*(.+?)\\.\\s*What's next\\?$",
+      "flags": "",
+      "replace": "很高兴见到你，$1。接下来做什么？"
+    },
+    {
+      "regex": "^Welcome back,\\s*(.+?)\\.?$",
+      "flags": "",
+      "replace": "欢迎回来，$1。"
+    },
+    {
+      "regex": "^Good morning,\\s*(.+?)\\.?$",
+      "flags": "",
+      "replace": "早上好，$1。"
+    },
+    {
+      "regex": "^Good afternoon,\\s*(.+?)\\.?$",
+      "flags": "",
+      "replace": "下午好，$1。"
+    },
+    {
+      "regex": "^Good evening,\\s*(.+?)\\.?$",
+      "flags": "",
+      "replace": "晚上好，$1。"
+    }
+  ]
+}

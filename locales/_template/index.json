@@ -1,0 +1,22 @@
+{
+  "code": "xx-XX",
+  "name": "Language Name (English)",
+  "nativeName": "Native Language Name",
+  "direction": "ltr",
+  "author": "your-github-handle",
+  "version": "0.1.0",
+  "ui": {
+    "sectionTitle": "Language",
+    "settingLabel": "Display Language",
+    "settingDescription": "Choose the interface display language for Antigravity.",
+    "modalTitle": "Select Interface Language",
+    "modalSubtitle": "Switches instantly without restart. Shortcut: Ctrl+Alt+L (Cmd+Option+L on macOS).",
+    "toggleFloatingLabel": "Show quick-switch floating button",
+    "closeButton": "Close",
+    "badgeLabel": "EN",
+    "badgeTooltip": "Switch Antigravity UI Language (Ctrl+Alt+L)"
+  },
+  "modules": [
+    "common.json"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "defaultLocale": "zh-CN",
+  "fallbackLocale": "en",
+  "locales": [
+    {
+      "code": "en",
+      "name": "English",
+      "nativeName": "English",
+      "direction": "ltr",
+      "builtin": true
+    },
+    {
+      "code": "zh-CN",
+      "name": "Simplified Chinese",
+      "nativeName": "简体中文",
+      "direction": "ltr",
+      "entry": "zh-CN/index.json"
+    }
+  ]
+}
