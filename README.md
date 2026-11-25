@@ -67,7 +67,10 @@ cd antigravity-zh-cn
 npm run build
 ```
 
-### 方式一：非破坏性启动器（推荐，不修改客户端文件）
+### 方式一：非破坏性启动器（不修改客户端文件）
+
+> **使用方式说明**：由于本方式完全不修改 Antigravity 本体文件，**每次启动客户端都需要通过下方命令（或启动器快捷方式）打开**；直接双击官方原图标仍会以英文原版启动。  
+> Windows 用户只需执行一次 `-CreateShortcut` 生成桌面快捷方式，以后直接双击桌面上的 **「Antigravity (中文版)」** 即可，无需每次手敲命令。如果你希望始终直接双击官方原图标即生效，请使用下方**方式二（静态补丁）**。
 
 1. 先完全退出正在运行的 Antigravity 桌面端（包括系统托盘）。
 2. 启动多语言客户端：
@@ -75,23 +78,24 @@ npm run build
 **Windows (PowerShell):**
 
 ```powershell
-# 直接启动
+# 每次启动时运行（方式 A：命令行直接启动）
 .\launcher\start-windows.ps1
 
-# 或在桌面创建「Antigravity (中文版)」快捷方式
-.\launcher\start-windows.ps1 -CreateShortcut
+# 或仅执行一次，在桌面创建「Antigravity (中文版)」快捷方式（方式 B：以后直接双击图标）
+powershell -ExecutionPolicy Bypass -File .\launcher\start-windows.ps1 -CreateShortcut
 ```
 
 **macOS / Linux:**
 
 ```bash
 chmod +x ./launcher/start-unix.sh
+# 每次启动时通过此脚本打开（可自行配置终端 alias 或桌面启动器）
 ./launcher/start-unix.sh
 ```
 
 > 若未自动检测到安装路径，可通过 `--app "<Antigravity 可执行文件路径>"` 或环境变量 `ANTIGRAVITY_APP_PATH` 手动指定。
 
-### 方式二：静态补丁（`app.asar` 注入，含原生菜单栏汉化）
+### 方式二：静态补丁（`app.asar` 注入，执行一次后直接点官方原图标生效）
 
 ```bash
 # 1. 查看检测到的 app.asar 与备份状态

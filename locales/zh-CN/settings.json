@@ -39,6 +39,12 @@
     "Queued messages": "排队消息",
     "Configure when follow-up messages are sent.": "配置后续消息的发送时机。",
     "Keyboard shortcuts": "快捷键说明",
+    "Queues after the turn": "在当前轮次结束后发送",
+    "Sends immediately": "立即发送",
+    "On empty prompt, sends next in queue": "输入框为空时，立即发送队列中的下一条",
+    "Enter Queues after the turn": "Enter：在当前轮次结束后发送",
+    "Alt+Enter Sends immediately": "Alt+Enter：立即发送",
+    "Alt+Enter On empty prompt, sends next in queue": "Alt+Enter：输入框为空时，立即发送队列中的下一条",
     "Queue": "排队发送",
     "Send Immediately": "立即发送",
     "Send message": "发送消息快捷键",
@@ -285,6 +291,21 @@
       "regex": "^You have used some of your 5-hour limit, it will fully refresh in (\\d+) hours?\\.$",
       "flags": "i",
       "replace": "已使用部分 5 小时额度，将在 $1 小时后完全重置。"
+    },
+    {
+      "regex": "^((?:Ctrl|Cmd|Alt|Option)\\+Enter|Enter)\\s+Queues after the turn$",
+      "flags": "",
+      "replace": "$1：在当前轮次结束后发送"
+    },
+    {
+      "regex": "^((?:Ctrl|Cmd|Alt|Option)\\+Enter|Enter)\\s+Sends immediately$",
+      "flags": "",
+      "replace": "$1：立即发送"
+    },
+    {
+      "regex": "^((?:Ctrl|Cmd|Alt|Option)\\+Enter|Enter)\\s+On empty prompt, sends next in queue$",
+      "flags": "",
+      "replace": "$1：输入框为空时，立即发送队列中的下一条"
     }
   ]
 }
