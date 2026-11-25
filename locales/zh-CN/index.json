@@ -4,7 +4,7 @@
   "nativeName": "简体中文",
   "direction": "ltr",
   "author": "xxhuid",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "ui": {
     "sectionTitle": "界面语言",
     "settingLabel": "显示语言 (Language)",

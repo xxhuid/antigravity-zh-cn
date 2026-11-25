@@ -1,6 +1,6 @@
 {
   "name": "antigravity-zh-cn",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Multi-language UI localization framework (Simplified Chinese + extensible language packs) and Agent Chinese workflow plugin for Google Antigravity 2.0.",

@@ -2,6 +2,17 @@
 
 本项目版本号采用独立语义化版本（SemVer），不与 Antigravity 官方版本号强绑定；每个版本均标注已实测适配的 Antigravity 客户端版本。
 
+## [0.2.2] - 2026-11-24
+
+> **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11 静态补丁 & macOS CDP 启动器双平台验证，兼容 `2.35.x+`）
+
+### 新增与优化
+
+- **词库扩展至 546 条 UI 词条 + 42 条动态正则**：
+  - 完整汉化**「账号（Account）」设置页**：覆盖页面副标题、遥测数据收集（`Enable telemetry`）、营销邮件（`Marketing emails`）、电子邮箱（`Email`）、Pro 专属的**远程 Agent 数据删除区（`Remote Agents Data`）**，以及底部服务条款/隐私政策提示；
+  - 完整适配 **Google AI Plus / Starter 套餐**说明与多套餐动态升级提示正则（同步放宽长句正则匹配上限至 260 字符）。
+- **平台验证更新**：更新 [README.md](./README.md) 平台支持矩阵，确认 **macOS** 平台通过方式一（CDP 启动器 `./launcher/start-unix.sh`）已实机验证通过。
+
 ## [0.2.1] - 2026-11-24
 
 > **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11，兼容 `2.35.x+`）
