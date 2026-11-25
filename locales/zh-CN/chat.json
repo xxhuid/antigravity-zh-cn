@@ -38,6 +38,24 @@
     "Reject": "拒绝",
     "Allow Once": "仅允许本次",
     "Allow for Session": "本次会话允许",
+    "Yes, allow this time": "是，仅本次允许",
+    "Yes, allow once": "是，仅允许本次",
+    "Yes, allow for this session": "是，本次会话允许",
+    "Yes, always allow": "是，始终允许",
+    "Yes, and always allow": "是，且始终允许",
+    "Yes, and always allow '": "是，且始终允许 '",
+    "in this conversation": "（仅当前对话）",
+    "' in this conversation": "'（仅当前对话）",
+    "(tell the agent what to do instead)": "（改为告诉 Agent 应该怎么做）",
+    "tell the agent what to do instead": "改为告诉 Agent 应该怎么做",
+    "No, deny": "否，拒绝",
+    "Deny this time": "仅本次拒绝",
+    "Always deny": "始终拒绝",
+    "Allow access": "允许访问",
+    "Deny access": "拒绝访问",
+    "Approve and run": "批准并运行",
+    "Run command": "运行命令",
+    "Select all that apply": "可多选",
     "Review Changes": "审查变更",
     "Accept All": "全部接受",
     "Reject All": "全部拒绝",
@@ -185,6 +203,21 @@
       "regex": "^Good evening,\\s*(.+?)\\.?$",
       "flags": "",
       "replace": "晚上好，$1。"
+    },
+    {
+      "regex": "^Allow\\s+(.+)\\?$",
+      "flags": "",
+      "replace": "是否允许 $1？"
+    },
+    {
+      "regex": "^Yes, and always allow\\s+(.+?)\\s+in this conversation$",
+      "flags": "",
+      "replace": "是，且当前对话始终允许 $1"
+    },
+    {
+      "regex": "^Yes, and always allow\\s+(.+)$",
+      "flags": "",
+      "replace": "是，且始终允许 $1"
     }
   ]
 }
