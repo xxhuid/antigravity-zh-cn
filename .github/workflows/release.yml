@@ -28,6 +28,62 @@ jobs:
           npm test
           npm run build
 
+      - name: Package portable ZIP archive
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, zipfile
+
+          tag = os.environ["TAG_NAME"]
+          root_folder = f"antigravity-zh-cn-{tag}"
+          zip_name = f"{root_folder}.zip"
+
+          include_items = [
+              "locales",
+              "engine",
+              "launcher",
+              "patcher",
+              "scripts",
+              "agent-plugin",
+              "dist",
+              "package.json",
+              "README.md",
+              "CHANGELOG.md",
+              "LICENSE",
+              "Windows-一键汉化工具.bat",
+              "macOS-一键汉化工具.command",
+              "Linux-一键汉化工具.sh",
+          ]
+
+          exec_suffixes = (".sh", ".command")
+
+          def add_file(zf, src_path, arc_rel):
+              info = zipfile.ZipInfo(f"{root_folder}/{arc_rel}")
+              info.compress_type = zipfile.ZIP_DEFLATED
+              # Set UTF-8 filename flag (bit 11) and preserve Unix permissions
+              info.flag_bits |= 0x800
+              mode = 0o755 if src_path.endswith(exec_suffixes) else 0o644
+              info.external_attr = (0o100000 | mode) << 16
+              with open(src_path, "rb") as f:
+                  zf.writestr(info, f.read())
+
+          with zipfile.ZipFile(zip_name, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+              for item in include_items:
+                  if not os.path.exists(item):
+                      continue
+                  if os.path.isfile(item):
+                      add_file(zf, item, item.replace("\\", "/"))
+                  else:
+                      for dirpath, _, filenames in os.walk(item):
+                          for fn in sorted(filenames):
+                              full = os.path.join(dirpath, fn)
+                              rel = os.path.relpath(full, ".").replace("\\", "/")
+                              add_file(zf, full, rel)
+
+          print(f"[OK] Packaged {zip_name} ({os.path.getsize(zip_name)} bytes)")
+          PY
+
       - name: Extract release notes from CHANGELOG.md
         id: notes
         env:
@@ -62,14 +118,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
+          ZIP_FILE="antigravity-zh-cn-${TAG_NAME}.zip"
           if [ "${{ steps.notes.outputs.has_notes }}" = "true" ]; then
             gh release create "$TAG_NAME" \
+              "$ZIP_FILE" \
               dist/i18n-runtime.js \
               dist/menu-locales.json \
               --title "$TAG_NAME" \
               --notes-file release-notes.md
           else
             gh release create "$TAG_NAME" \
+              "$ZIP_FILE" \
               dist/i18n-runtime.js \
               dist/menu-locales.json \
               --title "$TAG_NAME" \

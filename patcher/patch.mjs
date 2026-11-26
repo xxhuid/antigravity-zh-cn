@@ -490,6 +490,7 @@ function main() {
   }
 
   console.log('[OK] 静态补丁应用完成！现在可直接打开 Antigravity 查看效果。');
+  console.log('[TIP] 注意：Antigravity 官方每次更新后会覆盖补丁导致恢复英文，届时重新运行本工具按 [1]（或 npm run patch:apply）即可一键恢复。');
   console.log('[INFO] 如需还原原版，请运行: npm run patch:restore');
 }
 

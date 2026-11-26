@@ -2,6 +2,24 @@
 
 本项目版本号采用独立语义化版本（SemVer），不与 Antigravity 官方版本号强绑定；每个版本均标注已实测适配的 Antigravity 客户端版本。
 
+## [0.3.2] - 2026-11-26
+
+> **已实测适配客户端**：`Google Antigravity 2.35.2`（Windows 11 实机验证，兼容 `2.35.x+`）
+
+### 新增与优化
+
+- **一键交互式汉化管理工具与跨平台双击入口**：
+  - 新增 `scripts/cli.mjs`（`npm start`）及根目录一键入口 `Windows-一键汉化工具.bat`、`macOS-一键汉化工具.command`、`Linux-一键汉化工具.sh`，无需手敲命令行即可完成静态补丁安装/还原、无侵入 CDP 启动、创建桌面快捷方式与 Agent 中文插件管理；
+  - 打补丁/还原前自动检测正在运行的 Antigravity 进程并引导关闭，明确标注各模式在官方更新后是否会失效。
+- **双向更新检测与一键自动升级（`scripts/update.mjs`）**：
+  - 打开工具或运行 `npm run check-update` 自动检测 GitHub 最新版本，同时比对 `app.asar` 与原版备份版本号，主动识别 Antigravity 官方更新导致的补丁失效并提示一键恢复；
+  - 支持 `npm run update` / 菜单 `[6]` 一键自动升级（Git 仓库自动 `git pull --ff-only`，便携 ZIP 版自动下载最新 Release 覆盖更新并重建词库）。
+- **GitHub Releases 自动打包开箱即用便携 ZIP**：
+  - 每次发版自动生成 `antigravity-zh-cn-v*.zip`（内置预构建 `dist/` 与双击启动脚本，零 `npm install` 解压即用）。
+- **词库扩展至 655 条 UI 词条 + 52 条动态正则**：
+  - 补全归档对话提示弹窗（`Conversation Archived` 及带内联筛选图标的 `View archived in the sidebar (... menu).`）与同系列取消归档/恢复/删除/置顶提示词条；
+  - 在 [README.md](./README.md) 首屏新增实机效果预览截图与小白一键使用指南。
+
 ## [0.3.1] - 2026-11-25
 
 > **已实测适配客户端**：`Google Antigravity 2.35.2`（Windows 11 实机验证，兼容 `2.35.x+`）

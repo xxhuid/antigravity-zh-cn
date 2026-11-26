@@ -25,6 +25,12 @@ import {
   rewriteAsarArchive,
 } from '../patcher/asar-codec.mjs';
 import { buildBundle, loadAndValidateLocales, ROOT_DIR } from '../scripts/build-bundle.mjs';
+import {
+  checkForUpdates,
+  compareSemver,
+  inspectClientPatchStatus,
+  parseSemver,
+} from '../scripts/update.mjs';
 
 /**
  * Minimal Mock DOM for unit-testing DOM isolation, round-trip switching, and Settings UI injection
@@ -963,4 +969,95 @@ test('mountLanguageUI NEVER injects Language card into chat messages, Markdown, 
   assert.ok(injected, 'Language settings card should still inject into a real Settings -> General pane');
   assert.equal(injected.parentNode, settingsPane);
   ui.destroy();
+});
+
+test('update checker compares SemVer accurately, detects new releases, and degrades gracefully offline', async () => {
+  assert.deepEqual(parseSemver('v0.3.2'), { major: 0, minor: 3, patch: 2, prerelease: '' });
+  assert.equal(compareSemver('0.3.2', '0.3.1'), 1);
+  assert.equal(compareSemver('v0.10.0', '0.9.9'), 1);
+  assert.equal(compareSemver('0.3.1', 'v0.3.1'), 0);
+  assert.equal(compareSemver('0.3.1-beta.1', '0.3.1'), -1);
+
+  const hasNew = await checkForUpdates({
+    currentVersion: '0.3.1',
+    fetchJson: async () => ({
+      tag_name: 'v0.4.0',
+      html_url: 'https://github.com/xxhuid/antigravity-zh-cn/releases/tag/v0.4.0',
+      published_at: '2026-11-26T00:00:00Z',
+      body: '新增一键工具与自动更新',
+      assets: [
+        { name: 'i18n-runtime.js', browser_download_url: 'https://example.com/i18n-runtime.js' },
+        {
+          name: 'antigravity-zh-cn-v0.4.0.zip',
+          browser_download_url: 'https://example.com/antigravity-zh-cn-v0.4.0.zip',
+        },
+      ],
+    }),
+  });
+  assert.equal(hasNew.ok, true);
+  assert.equal(hasNew.hasUpdate, true);
+  assert.equal(hasNew.latestVersion, '0.4.0');
+  assert.equal(hasNew.zipAssetName, 'antigravity-zh-cn-v0.4.0.zip');
+  assert.equal(hasNew.zipAssetUrl, 'https://example.com/antigravity-zh-cn-v0.4.0.zip');
+
+  const upToDate = await checkForUpdates({
+    currentVersion: '0.4.0',
+    fetchJson: async () => ({
+      tag_name: 'v0.4.0',
+      html_url: 'https://github.com/xxhuid/antigravity-zh-cn/releases/tag/v0.4.0',
+      assets: [],
+    }),
+  });
+  assert.equal(upToDate.ok, true);
+  assert.equal(upToDate.hasUpdate, false);
+
+  const offline = await checkForUpdates({
+    currentVersion: '0.3.1',
+    fetchJson: async () => {
+      throw new Error('请求超时 (3500ms)');
+    },
+  });
+  assert.equal(offline.ok, false);
+  assert.equal(offline.hasUpdate, false);
+  assert.match(offline.error, /超时/);
+});
+
+test('inspectClientPatchStatus detects client upgrades that invalidated static patch and one-click scripts exist', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-i18n-status-'));
+  try {
+    const asarPath = path.join(tmp, 'app.asar');
+    const backupPath = `${asarPath}.zh-cn.bak`;
+
+    // Old backup v2.35.1 vs freshly upgraded pristine official app.asar v2.35.2
+    buildAsarFromMap(backupPath, {
+      'package.json': JSON.stringify({ name: 'antigravity', version: '2.35.1', main: 'dist/main.js' }),
+      'dist/main.js': 'console.log("main");',
+      'dist/preload.js': 'console.log("preload");',
+    });
+    buildAsarFromMap(asarPath, {
+      'package.json': JSON.stringify({ name: 'antigravity', version: '2.35.2', main: 'dist/main.js' }),
+      'dist/main.js': 'console.log("main");',
+      'dist/preload.js': 'console.log("preload");',
+    });
+
+    const status = inspectClientPatchStatus(asarPath);
+    assert.equal(status.found, true);
+    assert.equal(status.appVersion, '2.35.2');
+    assert.equal(status.backupVersion, '2.35.1');
+    assert.equal(status.clientUpgradedSincePatch, true);
+    assert.equal(status.state, 'client-upgraded');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
+  // Verify root one-click scripts exist and point to scripts/cli.mjs
+  const winBat = fs.readFileSync(path.join(ROOT_DIR, 'Windows-一键汉化工具.bat'), 'utf8');
+  assert.match(winBat, /chcp 65001/);
+  assert.match(winBat, /scripts\\cli\.mjs/);
+
+  const macCmd = fs.readFileSync(path.join(ROOT_DIR, 'macOS-一键汉化工具.command'), 'utf8');
+  assert.match(macCmd, /scripts\/cli\.mjs/);
+
+  const linuxSh = fs.readFileSync(path.join(ROOT_DIR, 'Linux-一键汉化工具.sh'), 'utf8');
+  assert.match(linuxSh, /scripts\/cli\.mjs/);
 });

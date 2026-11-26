@@ -55,9 +55,14 @@ antigravity-zh-cn/
 │   └── patch.mjs
 ├── agent-plugin/                # 可选：Agent 中文工作流插件（plugin.json + rules + skills）
 ├── scripts/
+│   ├── cli.mjs                  # 一键交互式管理工具（自动检测状态与更新）
+│   ├── update.mjs               # GitHub 最新版本检测 & 一键自更新（兼容 Git / 便携包）
 │   ├── build-bundle.mjs         # 校验词库并构建 dist/i18n-runtime.js
 │   └── install-agent-plugin.mjs # 一键安装/卸载 Agent 中文插件
 ├── tests/                       # 自动化测试（node --test）
+├── Windows-一键汉化工具.bat     # Windows 双击入口
+├── macOS-一键汉化工具.command   # macOS 双击入口
+├── Linux-一键汉化工具.sh        # Linux 启动入口
 ├── package.json
 ├── LICENSE
 └── README.md
@@ -67,7 +72,30 @@ antigravity-zh-cn/
 
 ## 快速开始
 
-> **环境要求**：Node.js `>= 18`（使用 CDP 启动器推荐 Node.js `22+` 内置 `WebSocket`）。
+> **环境要求**：Node.js `>= 18`（使用 CDP 启动器推荐 Node.js `22+` 内置 `WebSocket`），**零第三方 npm 依赖，无需 `npm install`**。
+
+### 🌟 最简单的方式：下载便携包，双击一键使用（推荐新手）
+
+无需 Git、无需敲命令：
+
+1. 前往 [Releases 最新版本页面](https://github.com/xxhuid/antigravity-zh-cn/releases/latest) 下载便携包 `antigravity-zh-cn-v*.zip` 并解压（也可直接点击仓库右上角 `Code -> Download ZIP`）。
+2. 双击对应系统的入口文件打开中文交互菜单：
+   - **Windows**：双击 **`Windows-一键汉化工具.bat`**（若 Antigravity 安装在 `C:\Program Files`，请右键「以管理员身份运行」）
+   - **macOS**：双击 **`macOS-一键汉化工具.command`**（首次若提示未验证开发者，请右键 → 打开，或在终端执行 `chmod +x macOS-一键汉化工具.command && ./macOS-一键汉化工具.command`）
+   - **Linux**：终端运行 `./Linux-一键汉化工具.sh`
+3. 菜单会自动显示 **远程最新版本** 与 **本机 Antigravity 客户端状态**，按数字即可一键完成：
+   - **`[1]`** 一键安装 / 恢复静态汉化补丁（若客户端正在运行会自动询问并协助关闭）
+   - **`[2]`** 一键还原官方英文原版
+   - **`[3]`** 非破坏性 CDP 启动（不改任何客户端文件，推荐 macOS / Linux）
+   - **`[4]`** Windows 一键创建桌面「Antigravity (中文版)」快捷方式
+   - **`[5]`** 一键安装 / 卸载 Agent 中文工作流插件
+   - **`[6]`** 一键检测汉化包更新并自动升级（升级后还会主动提示重打补丁）
+
+> 已通过 Git 克隆的开发者，也可以直接运行 `npm start` 打开同一个交互菜单。
+
+---
+
+### 命令行方式（开发者 / 自动化使用）
 
 先克隆本仓库并构建多语言运行时：
 
@@ -77,7 +105,7 @@ cd antigravity-zh-cn
 npm run build
 ```
 
-### 方式一：非破坏性启动器（不修改客户端文件）
+#### 方式一：非破坏性启动器（不修改客户端文件）
 
 > **使用方式说明**：由于本方式完全不修改 Antigravity 本体文件，**每次启动客户端都需要通过下方命令（或启动器快捷方式）打开**；直接双击官方原图标仍会以英文原版启动。  
 > Windows 用户只需执行一次 `-CreateShortcut` 生成桌面快捷方式，以后直接双击桌面上的 **「Antigravity (中文版)」** 即可，无需每次手敲命令。如果你希望始终直接双击官方原图标即生效，请使用下方**方式二（静态补丁）**。
@@ -105,7 +133,7 @@ chmod +x ./launcher/start-unix.sh
 
 > 若未自动检测到安装路径，可通过 `--app "<Antigravity 可执行文件路径>"` 或环境变量 `ANTIGRAVITY_APP_PATH` 手动指定。
 
-### 方式二：静态补丁（`app.asar` 注入，执行一次后直接点官方原图标生效）
+#### 方式二：静态补丁（`app.asar` 注入，执行一次后直接点官方原图标生效）
 
 ```bash
 # 1. 查看检测到的 app.asar 与备份状态
@@ -130,17 +158,22 @@ npm run patch:restore
 > - 内置纯 Node.js ASAR 编解码器，**零外部依赖**（无需安装或联网下载 `@electron/asar`），且原样保留所有 `app.asar.unpacked` 原生模块条目。
 > - 若客户端启用了 ASAR 完整性校验或 macOS 签名校验导致无法启动，请运行 `npm run patch:restore` 还原并改用**方式一（CDP 启动器）**。
 
-### 更新汉化词库
+### 检测更新与自动升级
 
-当仓库更新了新词条或新语言包时，无需 `npm install` 或手动编译：
+本工具同时支持 **汉化包自身版本检测** 与 **Antigravity 官方客户端升级检测**：
 
-```bash
-# 静态补丁模式：拉取最新代码并重打补丁（需先退出 Antigravity，完成后重启）
-git pull && npm run patch:apply
+- **图形菜单方式**：双击一键汉化工具（或运行 `npm start`），顶部状态栏会自动检测 GitHub 最新版本，以及本机 Antigravity 是否刚经历官方升级导致补丁失效；按 **`[6]`** 即可一键自动更新（Git 仓库自动 `git pull --ff-only`，便携 ZIP 版自动下载最新 Release 覆盖更新并重建词库）。
+- **命令行方式**：
+  ```bash
+  # 仅检查汉化包是否有新版本 + 检查本机客户端补丁状态
+  npm run check-update
 
-# CDP 启动器模式：只需 git pull，下次打开启动器会自动检测更新并重建
-git pull
-```
+  # 自动更新本地汉化包并重建词库（兼容 Git 克隆与便携 ZIP 版）
+  npm run update
+
+  # 若使用静态补丁模式，更新完词库（或官方客户端升级后）重打一次补丁即可
+  npm run patch:apply
+  ```
 
 ---
 
@@ -160,6 +193,7 @@ git pull
 
 | 本项目版本 | 已实测 Antigravity 版本 | 兼容范围与说明 |
 | :--- | :--- | :--- |
+| **`v0.3.2`** | `2.35.2`（Windows） | 655 条 UI 词条 + 52 条动态正则；新增跨平台双击一键汉化工具、GitHub 最新版本检测 & 一键自更新、客户端升级失效检测、Release 自动打包便携 ZIP、归档对话弹窗汉化与 README 效果预览截图 |
 | **`v0.3.1`** | `2.35.2`（Windows） | 644 条 UI 词条 + 52 条动态正则；补全 WSL 已连接状态 /「本地 Windows 环境（在本地重新打开）」与「提交反馈」表单全套词条（含动态邮箱与法律帮助链接），完善 `2.35.2` 适配与静态补丁更新失效说明 |
 | **`v0.3.0`** | `2.35.1` / `2.35.2`（Windows / macOS） | 593 条 UI 词条 + 51 条动态正则；重构核心引擎（用户内容/混合容器隔离、纯 WeakMap 防泄漏、rAF 分帧防掉帧、作用域词典与快捷键保留）、修复聊天区误插设置卡片、强化 Linux 便携探测与 CDP 目标过滤（兼容 `2.35.2`，WSL 与提交反馈补齐词条见 `v0.3.1`） |
 | **`v0.2.2`** | `2.35.1`（Windows / macOS） | 546 条 UI 词条 + 42 条动态正则，补全「账号」页、Plus/Starter 套餐说明与长句正则，确认 macOS CDP 实机可用 |
