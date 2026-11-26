@@ -793,6 +793,45 @@ test('scoped dictionaries, punctuation stripping, and hotkey suffix preservation
   assert.equal(realTranslator.translateString('Updated 1:46'), '更新于 1:46');
   assert.equal(realTranslator.translateString('Worked for 1m'), '已工作 1 分钟');
   assert.equal(realTranslator.translateString('Thought for 12s'), '已思考 12 秒');
+  assert.equal(realTranslator.translateString('Connected'), '已连接');
+  assert.equal(realTranslator.translateString('Local Windows environment'), '本地 Windows 环境');
+  assert.equal(
+    realTranslator.translateString(
+      'The app is currently connected to a WSL distro. Reopening locally relaunches it directly on Windows.',
+    ),
+    '应用当前已连接到 WSL 发行版。在本地重新打开将直接在 Windows 上重启应用。',
+  );
+  assert.equal(realTranslator.translateString('Reopen Locally'), '在本地重新打开');
+  assert.equal(realTranslator.translateString('Feedback Type'), '反馈类型');
+  assert.equal(realTranslator.translateString('Bug Report'), 'Bug 报告');
+  assert.equal(realTranslator.translateString('Feature Request'), '功能建议');
+  assert.equal(realTranslator.translateString('Auth and Billing'), '账号与账单');
+  assert.equal(realTranslator.translateString('Remote Control Issue'), '远程控制问题');
+  assert.equal(realTranslator.translateString('General Feedback'), '常规反馈');
+  assert.equal(realTranslator.translateString('Description'), '详细描述');
+  assert.equal(
+    realTranslator.translateString(
+      'Please describe the issue in detail. The more actionable your feedback, the quicker our team can address your request. Some helpful information includes:',
+    ),
+    '请详细描述遇到的问题。你的反馈越具体，我们团队就越快定位并处理。可包含以下信息：',
+  );
+  assert.equal(realTranslator.translateString('Steps to reproduce the issue'), '复现问题的步骤');
+  assert.equal(realTranslator.translateString('Expected behavior'), '预期表现');
+  assert.equal(realTranslator.translateString('Actual behavior'), '实际表现');
+  assert.equal(realTranslator.translateString('Any error messages'), '相关报错信息');
+  assert.equal(realTranslator.translateString('Any relevant information'), '其他相关信息');
+  assert.equal(realTranslator.translateString('Describe the bug you encountered...'), '请描述你遇到的 Bug...');
+  assert.equal(realTranslator.translateString('Steps to Reproduce'), '复现步骤');
+  assert.equal(realTranslator.translateString('Please list the steps to reproduce the issue'), '请列出复现该问题的步骤');
+  assert.equal(realTranslator.translateString('Attach a screenshot (optional)'), '附加截图（可选）');
+  assert.equal(realTranslator.translateString('Attach Antigravity server logs'), '附加 Antigravity 服务端日志');
+  assert.equal(realTranslator.translateString('Send feedback as xxhuid@gmail.com'), '使用 xxhuid@gmail.com 提交反馈');
+  assert.equal(realTranslator.translateString('Visit '), '访问 ');
+  assert.equal(realTranslator.translateString('Legal Help'), '法律帮助');
+  assert.equal(
+    realTranslator.translateString(' to ask for content changes for legal reasons.'),
+    ' 以因法律原因申请更改内容。',
+  );
 
   translator.setLocale('en');
   assert.equal(swarmLive.textContent, 'Live');

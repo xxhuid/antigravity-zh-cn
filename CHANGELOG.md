@@ -2,6 +2,19 @@
 
 本项目版本号采用独立语义化版本（SemVer），不与 Antigravity 官方版本号强绑定；每个版本均标注已实测适配的 Antigravity 客户端版本。
 
+## [0.3.1] - 2026-11-25
+
+> **已实测适配客户端**：`Google Antigravity 2.35.2`（Windows 11 实机验证，兼容 `2.35.x+`）
+
+### 新增与优化
+
+- **词库扩展至 644 条 UI 词条 + 52 条动态正则**：
+  - 补全 **WSL 已连接与切回本地环境** 词条（`Connected` / `Connecting...` / `Disconnected` / `Local Windows environment` / `Reopen Locally` 及状态说明）；
+  - 补全 **「提交反馈（Give Feedback）」弹窗** 全套词条（`Feedback Type`、五类反馈选项、`Description` 说明列表、`Steps to Reproduce`、输入框占位提示、截图/服务端日志复选框、`Send feedback as <email>` 动态正则及底部 `Legal Help` 法律帮助提示）。
+- **文档与版本兼容说明完善**：
+  - 在 [README.md](./README.md) 醒目标注官方客户端更新后静态补丁会失效（界面恢复英文），需退出客户端重新运行 `npm run patch:apply` 恢复；
+  - 更新 Antigravity `2.35.2` 版本对应表及 `npm run patch:status` 排查说明。
+
 ## [0.3.0] - 2026-11-25
 
 > **已实测适配客户端**：`Google Antigravity 2.35.1`（Windows 11 实机验收通过，兼容 `2.35.x+`）
