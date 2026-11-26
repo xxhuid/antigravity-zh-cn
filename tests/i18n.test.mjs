@@ -833,6 +833,35 @@ test('scoped dictionaries, punctuation stripping, and hotkey suffix preservation
     ' 以因法律原因申请更改内容。',
   );
 
+  // Archive toast notification (split around inline <svg> filter icon)
+  const toastEnv = createMockEnv();
+  const toastTranslator = createTranslator(realBundle, {
+    window: toastEnv.win,
+    document: toastEnv.doc,
+    storage: toastEnv.storage,
+  });
+  const toast = toastEnv.doc.createElement('div');
+  const toastTitle = toastEnv.doc.createElement('div');
+  toastTitle.textContent = 'Conversation Archived';
+  const toastBody = toastEnv.doc.createElement('div');
+  const bodyBefore = toastEnv.doc.createTextNode('View archived in the sidebar (');
+  const filterSvg = toastEnv.doc.createElement('svg');
+  const bodyAfter = toastEnv.doc.createTextNode(' menu).');
+  toastBody.appendChild(bodyBefore);
+  toastBody.appendChild(filterSvg);
+  toastBody.appendChild(bodyAfter);
+  toast.appendChild(toastTitle);
+  toast.appendChild(toastBody);
+  toastEnv.doc.body.appendChild(toast);
+  toastTranslator.translateTree(toastEnv.doc.body);
+  assert.equal(toastTitle.textContent, '对话已归档');
+  assert.equal(bodyBefore.nodeValue, '在侧边栏中查看已归档对话（');
+  assert.equal(bodyAfter.nodeValue, ' 菜单）。');
+  toastTranslator.setLocale('en');
+  assert.equal(toastTitle.textContent, 'Conversation Archived');
+  assert.equal(bodyBefore.nodeValue, 'View archived in the sidebar (');
+  assert.equal(bodyAfter.nodeValue, ' menu).');
+
   translator.setLocale('en');
   assert.equal(swarmLive.textContent, 'Live');
   assert.equal(puncEl.textContent, 'Settings:');
