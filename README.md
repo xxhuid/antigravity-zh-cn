@@ -6,6 +6,16 @@
 
 ---
 
+## 效果预览
+
+![主界面简体中文效果](./docs/images/overview.png)
+
+| 设置页原生风格「界面语言」卡片 | `Ctrl + Alt + L` 快捷键即时切换 |
+| :---: | :---: |
+| ![设置页界面语言设置](./docs/images/settings-language.png) | ![快捷键切换界面语言弹窗](./docs/images/quick-switch.png) |
+
+---
+
 ## 核心特性
 
 - **客户端内“界面语言”设置项**
